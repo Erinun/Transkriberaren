@@ -1,0 +1,38 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
+  "productName": "MötesSkribent",
+  "version": "0.1.0",
+  "identifier": "se.motesskribent.app",
+  "build": {
+    "frontendDist": "../app/dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": {
+      "script": "npm run dev",
+      "cwd": "../app"
+    },
+    "beforeBuildCommand": {
+      "script": "npm run build",
+      "cwd": "../app"
+    }
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "MötesSkribent",
+        "width": 900,
+        "height": 700,
+        "resizable": true,
+        "minWidth": 700,
+        "minHeight": 500
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    }
+  }
+}

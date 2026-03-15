@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicmr/tauri/dev/crates/tauri-utils/schema.json",
+  "identifier": "default",
+  "description": "Default permissions for MötesSkribent",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "dialog:allow-open",
+    "shell:default",
+    "shell:allow-open"
+  ]
+}
