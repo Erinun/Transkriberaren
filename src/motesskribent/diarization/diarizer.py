@@ -64,7 +64,7 @@ def _get_pipeline(
 
     pipeline = Pipeline.from_pretrained(
         model_name,
-        use_auth_token=hf_token,
+        token=hf_token,
     )
 
     _cached_pipeline = pipeline
