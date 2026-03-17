@@ -237,7 +237,7 @@ export default function App() {
 
       {/* Content */}
       <main className="flex-1 overflow-y-auto p-6">
-        <div className={activeView !== "dashboard" ? "animate-fade-in" : ""}>
+        <div>
           {activeView === "dashboard" && (
             <DashboardView
               onNavigate={setActiveView}

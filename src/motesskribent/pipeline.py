@@ -148,10 +148,11 @@ def run_pipeline(
 
     def _run_diarization():
         nonlocal diarization_segments, num_speakers, diarization_failed
+        t = time.perf_counter()
         if skip_diarization:
             logger.info("Hoppar över diarisering (num_speakers=%s)", config.num_speakers)
             num_speakers = max(config.num_speakers, 1)
-            return
+            return 0.0
         try:
             from motesskribent.diarization.diarizer import diarize
             diar_result = diarize(
@@ -167,9 +168,11 @@ def run_pipeline(
             num_speakers = 1
             diarization_failed = True
             warnings.append("Talarseparering ej tillgänglig")
+        return time.perf_counter() - t
 
     def _run_transcription():
         nonlocal trans_result
+        t = time.perf_counter()
         from motesskribent.transcription.transcriber import transcribe
         trans_result = transcribe(
             preprocessed.audio_path,
@@ -183,27 +186,22 @@ def run_pipeline(
             vad_filter=config.vad_enabled,
             batch_size=config.batch_size,
         )
+        return time.perf_counter() - t
 
-    t0 = time.perf_counter()
     if skip_diarization:
-        _run_diarization()
+        breakdown["diarization"] = _run_diarization()
         _progress("diarization", 0.35)
-        t_trans = time.perf_counter()
-        _run_transcription()
-        breakdown["diarization"] = 0.0
-        breakdown["transcription"] = time.perf_counter() - t_trans
+        breakdown["transcription"] = _run_transcription()
     else:
         with ThreadPoolExecutor(max_workers=2) as pool:
             diar_future = pool.submit(_run_diarization)
             trans_future = pool.submit(_run_transcription)
 
             # Diarization typically finishes first — report progress as it completes
-            diar_future.result()
-            breakdown["diarization"] = time.perf_counter() - t0
+            breakdown["diarization"] = diar_future.result()
             _progress("diarization", 0.35)
 
-            trans_future.result()
-            breakdown["transcription"] = time.perf_counter() - t0 - breakdown["diarization"]
+            breakdown["transcription"] = trans_future.result()
 
     _progress("transcription", 0.90)
 
