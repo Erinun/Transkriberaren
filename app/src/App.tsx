@@ -28,6 +28,7 @@ function loadSettingsForRecording(): PipelineSettings {
   let numSpeakers: number | null = null;
   let formats = ["markdown", "json"];
   let vadEnabled = true;
+  let speedProfile = "balanced";
 
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -45,6 +46,7 @@ function loadSettingsForRecording(): PipelineSettings {
         if (fmtList.length > 0) formats = fmtList;
       }
       if (typeof s.vadEnabled === "boolean") vadEnabled = s.vadEnabled;
+      if (s.defaultSpeedProfile) speedProfile = s.defaultSpeedProfile;
     }
   } catch {}
 
@@ -57,6 +59,7 @@ function loadSettingsForRecording(): PipelineSettings {
     outputDir,
     vadEnabled,
     prompt: null,
+    speedProfile,
   };
 }
 

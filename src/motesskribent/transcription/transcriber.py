@@ -14,13 +14,15 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from faster_whisper import WhisperModel
+from faster_whisper import BatchedInferencePipeline, WhisperModel
 
 logger = logging.getLogger(__name__)
 
 # Module-level model cache
 _cached_model: WhisperModel | None = None
 _cached_model_key: tuple | None = None
+_cached_batched: BatchedInferencePipeline | None = None
+_cached_batched_key: tuple | None = None
 
 
 @dataclass
@@ -68,7 +70,7 @@ def _get_model(
     global _cached_model, _cached_model_key
 
     if cpu_threads is None:
-        cpu_threads = max(1, (os.cpu_count() or 4) // 2)
+        cpu_threads = max(1, ((os.cpu_count() or 4) * 3) // 4)
 
     key = (str(model_path), compute_type, cpu_threads)
 
@@ -92,16 +94,42 @@ def _get_model(
     return model
 
 
+def _get_batched_pipeline(
+    model_path: Path | str,
+    compute_type: str = "int8",
+    cpu_threads: int | None = None,
+) -> BatchedInferencePipeline:
+    """Hämta eller skapa en cachad BatchedInferencePipeline."""
+    global _cached_batched, _cached_batched_key
+
+    if cpu_threads is None:
+        cpu_threads = max(1, ((os.cpu_count() or 4) * 3) // 4)
+
+    key = (str(model_path), compute_type, cpu_threads)
+
+    if _cached_batched is not None and _cached_batched_key == key:
+        logger.debug("Använder cachad batched pipeline: %s", key)
+        return _cached_batched
+
+    model = _get_model(model_path, compute_type, cpu_threads)
+    pipeline = BatchedInferencePipeline(model=model)
+
+    _cached_batched = pipeline
+    _cached_batched_key = key
+    return pipeline
+
+
 def transcribe(
     audio_path: Path | str,
     model_path: Path | str = "KBLab/kb-whisper-small",
     language: str = "sv",
-    beam_size: int = 5,
+    beam_size: int = 1,
     cpu_threads: int | None = None,
     compute_type: str = "int8",
     word_timestamps: bool = True,
     initial_prompt: str | None = None,
     vad_filter: bool = True,
+    batch_size: int = 16,
 ) -> TranscriptionResult:
     """
     Transkribera en ljudfil med faster-whisper och KB-Whisper.
@@ -111,12 +139,14 @@ def transcribe(
         model_path: HuggingFace-ID eller lokal sökväg till CTranslate2-modell.
                      Default: "KBLab/kb-whisper-small" (auto-download).
         language: Språkkod (default "sv" för svenska).
-        beam_size: Beam search-bredd (default 5).
-        cpu_threads: Antal CPU-trådar (default: os.cpu_count() // 2).
+        beam_size: Beam search-bredd (default 1, greedy decoding).
+        cpu_threads: Antal CPU-trådar (default: os.cpu_count() * 3/4).
         compute_type: Kvantiseringstyp (default "int8").
         word_timestamps: Returnera ord-tidsstämplar (default True).
         initial_prompt: Domänspecifika termer för bättre transkribering.
         vad_filter: Använd Silero VAD för att hoppa över tystnad (default True).
+        batch_size: Batch-storlek för BatchedInferencePipeline (default 16).
+                    Sätts till 0 för att använda standard sekventiell inferens.
 
     Returns:
         TranscriptionResult med alla segment, språkinfo och metadata.
@@ -125,9 +155,7 @@ def transcribe(
     if not audio_path.exists():
         raise FileNotFoundError(f"Ljudfilen finns inte: {audio_path}")
 
-    model = _get_model(model_path, compute_type, cpu_threads)
-
-    logger.info("Startar transkribering av: %s", audio_path.name)
+    logger.info("Startar transkribering av: %s (batch_size=%d, beam_size=%d)", audio_path.name, batch_size, beam_size)
     start_time = time.perf_counter()
 
     vad_parameters = dict(
@@ -135,15 +163,27 @@ def transcribe(
         speech_pad_ms=200,
     ) if vad_filter else None
 
-    segments_gen, info = model.transcribe(
-        str(audio_path),
-        language=language,
-        beam_size=beam_size,
-        word_timestamps=word_timestamps,
-        vad_filter=vad_filter,
-        vad_parameters=vad_parameters,
-        initial_prompt=initial_prompt,
-    )
+    if batch_size > 0:
+        pipeline = _get_batched_pipeline(model_path, compute_type, cpu_threads)
+        segments_gen, info = pipeline.transcribe(
+            str(audio_path),
+            language=language,
+            beam_size=beam_size,
+            word_timestamps=word_timestamps,
+            batch_size=batch_size,
+            initial_prompt=initial_prompt,
+        )
+    else:
+        model = _get_model(model_path, compute_type, cpu_threads)
+        segments_gen, info = model.transcribe(
+            str(audio_path),
+            language=language,
+            beam_size=beam_size,
+            word_timestamps=word_timestamps,
+            vad_filter=vad_filter,
+            vad_parameters=vad_parameters,
+            initial_prompt=initial_prompt,
+        )
 
     # segments_gen är en generator — konsumera exakt en gång
     segments: list[TranscribedSegment] = []

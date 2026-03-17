@@ -12,6 +12,7 @@ pub struct TranscriptionConfig {
     pub output_dir: String,
     pub vad_enabled: bool,
     pub prompt: Option<String>,
+    pub speed_profile: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,6 +69,10 @@ pub async fn run_python_pipeline(
 
     if let Some(ref prompt) = config.prompt {
         cmd.arg("--prompt").arg(prompt);
+    }
+
+    if let Some(ref profile) = config.speed_profile {
+        cmd.arg("--speed-profile").arg(profile);
     }
 
     // Force Python to use UTF-8 for stdout/stderr (avoids cp1252 on Windows)

@@ -96,10 +96,12 @@ def _run_json_ipc(audio_file: Path, config):
 @click.option("--prompt", type=str, default=None,
               help="Domänspecifika termer för bättre transkribering.")
 @click.option("--no-vad", is_flag=True, help="Inaktivera VAD-filtrering.")
+@click.option("--speed-profile", type=click.Choice(["fast", "balanced", "quality"]),
+              default="balanced", help="Hastighetsprofil (default: balanced).")
 @click.option("--json-ipc", is_flag=True, help="JSON-output för IPC (används av GUI).")
 def transkribera(audio_file: Path, modell: str, talare: int | None,
                  formats: tuple[str, ...], output: Path, prompt: str | None,
-                 no_vad: bool, json_ipc: bool):
+                 no_vad: bool, speed_profile: str, json_ipc: bool):
     """Transkribera en ljudfil med talarseparering."""
     from motesskribent.pipeline import PipelineConfig, run_pipeline
 
@@ -110,6 +112,7 @@ def transkribera(audio_file: Path, modell: str, talare: int | None,
         output_formats=list(formats),
         initial_prompt=prompt,
         vad_enabled=not no_vad,
+        speed_profile=speed_profile,
     )
 
     if json_ipc:

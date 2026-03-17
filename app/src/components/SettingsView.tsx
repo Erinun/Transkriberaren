@@ -5,6 +5,7 @@ interface Settings {
   defaultNumSpeakers: string;
   defaultFormats: { markdown: boolean; json: boolean; docx: boolean };
   vadEnabled: boolean;
+  defaultSpeedProfile: string;
 }
 
 const STORAGE_KEY = "motesskribent-settings";
@@ -19,6 +20,7 @@ function loadSettings(): Settings {
     defaultNumSpeakers: "",
     defaultFormats: { markdown: true, json: true, docx: false },
     vadEnabled: true,
+    defaultSpeedProfile: "balanced",
   };
 }
 
@@ -109,6 +111,30 @@ export default function SettingsView() {
             />
             Word (.docx)
           </label>
+        </div>
+      </div>
+
+      {/* Speed profile */}
+      <div className="space-y-2">
+        <label className="block text-sm text-[var(--color-text-muted)]">Standard hastighetsprofil</label>
+        <div className="flex rounded-lg overflow-hidden border border-white/10">
+          {([
+            { id: "fast", label: "Snabb" },
+            { id: "balanced", label: "Balanserad" },
+            { id: "quality", label: "H\u00f6g kvalitet" },
+          ] as const).map((p) => (
+            <button
+              key={p.id}
+              onClick={() => update("defaultSpeedProfile", p.id)}
+              className={`flex-1 px-3 py-2 text-sm transition-colors ${
+                settings.defaultSpeedProfile === p.id
+                  ? "bg-[var(--color-primary)] text-white"
+                  : "glass hover:bg-white/5 text-[var(--color-text-muted)]"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
         </div>
       </div>
 

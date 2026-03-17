@@ -9,6 +9,7 @@ export interface PipelineSettings {
   outputDir: string;
   vadEnabled: boolean;
   prompt: string | null;
+  speedProfile: string;
 }
 
 export interface PipelineSummary {
@@ -105,6 +106,7 @@ export function usePipeline() {
             output_dir: settings.outputDir,
             vad_enabled: settings.vadEnabled,
             prompt: settings.prompt,
+            speed_profile: settings.speedProfile,
           },
         });
       } catch (err: any) {

@@ -92,6 +92,7 @@ def _handle_transcribe(request_id: str, audio_path: str, config: dict) -> None:
         output_formats=config.get("formats", ["markdown", "json"]),
         initial_prompt=config.get("prompt"),
         vad_enabled=config.get("vad_enabled", True),
+        speed_profile=config.get("speed_profile", "balanced"),
     )
 
     def on_progress(step: str, fraction: float):

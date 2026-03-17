@@ -384,6 +384,7 @@ impl SidecarManager {
                 "output_dir": config.output_dir,
                 "vad_enabled": config.vad_enabled,
                 "prompt": config.prompt,
+                "speed_profile": config.speed_profile,
             }
         });
 

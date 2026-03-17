@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from motesskribent.diarization.diarizer import SpeakerSegment
-from motesskribent.pipeline import PipelineConfig, PipelineResult, _assign_speakers
+from motesskribent.pipeline import SPEED_PROFILES, PipelineConfig, PipelineResult, _assign_speakers
 from motesskribent.transcription.transcriber import TranscribedSegment
 
 
@@ -96,7 +96,9 @@ class TestPipelineConfig:
         assert cfg.model_path == "KBLab/kb-whisper-small"
         assert cfg.language == "sv"
         assert cfg.compute_type == "int8"
-        assert cfg.beam_size == 5
+        assert cfg.beam_size == 1
+        assert cfg.batch_size == 16
+        assert cfg.speed_profile == "balanced"
         assert cfg.vad_enabled is True
         assert cfg.min_speakers == 2
         assert cfg.max_speakers == 10
@@ -130,3 +132,43 @@ class TestPipelineResult:
         )
         assert result.num_speakers == 2
         assert result.total_duration == 60.0
+
+
+class TestSpeedProfiles:
+    """Tester för hastighetsprofiler."""
+
+    def test_speed_profiles_defined(self):
+        assert "fast" in SPEED_PROFILES
+        assert "balanced" in SPEED_PROFILES
+        assert "quality" in SPEED_PROFILES
+
+    def test_fast_profile(self):
+        cfg = PipelineConfig(speed_profile="fast")
+        profile = SPEED_PROFILES["fast"]
+        assert profile["beam_size"] == 1
+        assert profile["batch_size"] == 24
+
+    def test_balanced_profile(self):
+        cfg = PipelineConfig(speed_profile="balanced")
+        profile = SPEED_PROFILES["balanced"]
+        assert profile["beam_size"] == 1
+        assert profile["batch_size"] == 16
+
+    def test_quality_profile(self):
+        cfg = PipelineConfig(speed_profile="quality")
+        profile = SPEED_PROFILES["quality"]
+        assert profile["beam_size"] == 5
+        assert profile["batch_size"] == 8
+
+    def test_all_profiles_have_required_keys(self):
+        for name, profile in SPEED_PROFILES.items():
+            assert "beam_size" in profile, f"Profile '{name}' missing beam_size"
+            assert "batch_size" in profile, f"Profile '{name}' missing batch_size"
+
+    def test_config_with_custom_profile(self):
+        cfg = PipelineConfig(speed_profile="quality")
+        assert cfg.speed_profile == "quality"
+
+    def test_config_default_profile(self):
+        cfg = PipelineConfig()
+        assert cfg.speed_profile == "balanced"

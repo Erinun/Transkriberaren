@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -15,6 +16,13 @@ logger = logging.getLogger(__name__)
 ProgressCallback = Callable[[str, float], None]
 
 
+SPEED_PROFILES = {
+    "fast": {"beam_size": 1, "batch_size": 24},
+    "balanced": {"beam_size": 1, "batch_size": 16},
+    "quality": {"beam_size": 5, "batch_size": 8},
+}
+
+
 @dataclass
 class PipelineConfig:
     """Konfiguration för transkriberingspipelinen."""
@@ -22,7 +30,8 @@ class PipelineConfig:
     language: str = "sv"
     compute_type: str = "int8"
     cpu_threads: int | None = None
-    beam_size: int = 5
+    beam_size: int = 1
+    batch_size: int = 16
     vad_enabled: bool = True
     num_speakers: int | None = None
     min_speakers: int = 2
@@ -31,6 +40,7 @@ class PipelineConfig:
     output_formats: list[str] = field(default_factory=lambda: ["markdown", "json"])
     include_word_timestamps: bool = False
     initial_prompt: str | None = None
+    speed_profile: str = "balanced"
 
 
 @dataclass
@@ -106,6 +116,12 @@ def run_pipeline(
     if not audio_path.exists():
         raise FileNotFoundError(f"Ljudfilen finns inte: {audio_path}")
 
+    # Resolve speed profile → beam_size / batch_size
+    if config.speed_profile in SPEED_PROFILES:
+        profile = SPEED_PROFILES[config.speed_profile]
+        config.beam_size = profile["beam_size"]
+        config.batch_size = profile["batch_size"]
+
     config.output_dir = Path(config.output_dir)
     config.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -122,21 +138,22 @@ def run_pipeline(
     breakdown["preprocessing"] = time.perf_counter() - t0
     _progress("preprocessing", 0.05)
 
-    # 2. Diarisering
+    # 2+3. Diarisering och transkribering parallellt
     diarization_segments = []
     num_speakers = 0
     diarization_failed = False
     skip_diarization = config.num_speakers is not None and config.num_speakers <= 1
-    t0 = time.perf_counter()
     warnings: list[str] = []
+    trans_result = None
 
-    if skip_diarization:
-        logger.info("Hoppar över diarisering (num_speakers=%s)", config.num_speakers)
-        num_speakers = max(config.num_speakers, 1)
-    else:
+    def _run_diarization():
+        nonlocal diarization_segments, num_speakers, diarization_failed
+        if skip_diarization:
+            logger.info("Hoppar över diarisering (num_speakers=%s)", config.num_speakers)
+            num_speakers = max(config.num_speakers, 1)
+            return
         try:
             from motesskribent.diarization.diarizer import diarize
-
             diar_result = diarize(
                 preprocessed.audio_path,
                 num_speakers=config.num_speakers,
@@ -151,25 +168,43 @@ def run_pipeline(
             diarization_failed = True
             warnings.append("Talarseparering ej tillgänglig")
 
-    breakdown["diarization"] = time.perf_counter() - t0
-    _progress("diarization", 0.35)
+    def _run_transcription():
+        nonlocal trans_result
+        from motesskribent.transcription.transcriber import transcribe
+        trans_result = transcribe(
+            preprocessed.audio_path,
+            model_path=config.model_path,
+            language=config.language,
+            beam_size=config.beam_size,
+            cpu_threads=config.cpu_threads,
+            compute_type=config.compute_type,
+            word_timestamps=config.include_word_timestamps,
+            initial_prompt=config.initial_prompt,
+            vad_filter=config.vad_enabled,
+            batch_size=config.batch_size,
+        )
 
-    # 3. Transkribering
     t0 = time.perf_counter()
-    from motesskribent.transcription.transcriber import transcribe
+    if skip_diarization:
+        _run_diarization()
+        _progress("diarization", 0.35)
+        t_trans = time.perf_counter()
+        _run_transcription()
+        breakdown["diarization"] = 0.0
+        breakdown["transcription"] = time.perf_counter() - t_trans
+    else:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            diar_future = pool.submit(_run_diarization)
+            trans_future = pool.submit(_run_transcription)
 
-    trans_result = transcribe(
-        preprocessed.audio_path,
-        model_path=config.model_path,
-        language=config.language,
-        beam_size=config.beam_size,
-        cpu_threads=config.cpu_threads,
-        compute_type=config.compute_type,
-        word_timestamps=config.include_word_timestamps,
-        initial_prompt=config.initial_prompt,
-        vad_filter=config.vad_enabled,
-    )
-    breakdown["transcription"] = time.perf_counter() - t0
+            # Diarization typically finishes first — report progress as it completes
+            diar_future.result()
+            breakdown["diarization"] = time.perf_counter() - t0
+            _progress("diarization", 0.35)
+
+            trans_future.result()
+            breakdown["transcription"] = time.perf_counter() - t0 - breakdown["diarization"]
+
     _progress("transcription", 0.90)
 
     # 4. Matcha talare

@@ -31,6 +31,7 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
   const [formats, setFormats] = useState({ markdown: true, json: true, docx: false });
   const [outputDir, setOutputDir] = useState("");
   const [vadEnabled, setVadEnabled] = useState(true);
+  const [speedProfile, setSpeedProfile] = useState("balanced");
 
   useEffect(() => {
     invoke<string>("get_default_output_dir").then(setOutputDir);
@@ -62,6 +63,7 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
       outputDir,
       vadEnabled,
       prompt: null,
+      speedProfile,
     });
   };
 
@@ -99,6 +101,31 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
             </option>
           ))}
         </select>
+      </div>
+
+      {/* Speed profile */}
+      <div className="space-y-2">
+        <label className="block text-sm text-[var(--color-text-muted)]">Hastighetsprofil</label>
+        <div className="flex rounded-lg overflow-hidden border border-white/10">
+          {([
+            { id: "fast", label: "Snabb", desc: "Snabbast" },
+            { id: "balanced", label: "Balanserad", desc: "Rekommenderas" },
+            { id: "quality", label: "H\u00f6g kvalitet", desc: "Noggrannast" },
+          ] as const).map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setSpeedProfile(p.id)}
+              className={`flex-1 px-3 py-2 text-sm transition-colors ${
+                speedProfile === p.id
+                  ? "bg-[var(--color-primary)] text-white"
+                  : "glass hover:bg-white/5 text-[var(--color-text-muted)]"
+              }`}
+            >
+              <div className="font-medium">{p.label}</div>
+              <div className="text-xs opacity-70">{p.desc}</div>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Speakers */}
