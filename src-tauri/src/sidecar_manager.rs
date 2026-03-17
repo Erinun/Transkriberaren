@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{Mutex, Notify};
@@ -32,6 +32,8 @@ pub struct SidecarManager {
 struct SidecarProcess {
     child: Child,
     stdin: tokio::process::ChildStdin,
+    /// Signaled when the background reader hits EOF (process died).
+    disconnected: Arc<Notify>,
 }
 
 impl SidecarManager {
@@ -67,8 +69,7 @@ impl SidecarManager {
         }
 
         // Need to spawn
-        let python = self.get_python(app)?;
-        let proc = self.spawn_process(&python, app).await?;
+        let proc = self.spawn_process(app).await?;
         *guard = Some(proc);
         Ok(())
     }
@@ -84,15 +85,42 @@ impl SidecarManager {
         crate::commands::find_python(app)
     }
 
+    /// Find the bundled sidecar exe in the Tauri resource directory.
+    fn find_bundled_sidecar(app: &AppHandle) -> Option<PathBuf> {
+        let resource_dir = app.path().resource_dir().ok()?;
+        let exe = resource_dir
+            .join("sidecar")
+            .join("motesskribent-sidecar.exe");
+        if exe.exists() {
+            Some(exe)
+        } else {
+            None
+        }
+    }
+
     async fn spawn_process(
         &self,
-        python: &str,
         app: &AppHandle,
     ) -> Result<SidecarProcess, String> {
-        let mut cmd = Command::new(python);
-        cmd.arg("-m")
-            .arg("motesskribent")
-            .arg("serve");
+        // Production: use bundled sidecar exe if present
+        // Dev (debug builds): always use Python source so code changes take effect
+        let use_bundled = if cfg!(debug_assertions) {
+            log::info!("Debug-läge: hoppar över bundlad sidecar, använder Python-källa");
+            None
+        } else {
+            Self::find_bundled_sidecar(app)
+        };
+
+        let mut cmd = if let Some(ref exe) = use_bundled {
+            log::info!("Använder bundlad sidecar: {}", exe.display());
+            Command::new(exe)
+        } else {
+            let python = self.get_python(app)?;
+            log::info!("Använder Python: {}", python);
+            let mut c = Command::new(&python);
+            c.arg("-m").arg("motesskribent").arg("serve");
+            c
+        };
 
         cmd.env("PYTHONIOENCODING", "utf-8");
         cmd.stdin(std::process::Stdio::piped());
@@ -116,9 +144,14 @@ impl SidecarManager {
             .take()
             .ok_or("Kunde inte öppna stdout för sidecar")?;
 
+        let disconnected = Arc::new(Notify::new());
+        let ready_signal = Arc::new(Notify::new());
+
         // Spawn background reader that routes events by request_id
         let pending = self.pending.clone();
         let app_clone = app.clone();
+        let dc = disconnected.clone();
+        let rs = ready_signal.clone();
         tokio::spawn(async move {
             let mut reader = BufReader::new(stdout);
             loop {
@@ -135,14 +168,20 @@ impl SidecarManager {
                             Err(_) => continue, // non-JSON output (logging etc.)
                         };
 
-                        let req_id = parsed
-                            .get("request_id")
+                        let msg_type = parsed
+                            .get("type")
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
 
-                        let msg_type = parsed
-                            .get("type")
+                        // Signal ready when Python sends {"type": "ready"}
+                        if msg_type == "ready" {
+                            rs.notify_one();
+                            continue;
+                        }
+
+                        let req_id = parsed
+                            .get("request_id")
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
@@ -166,24 +205,42 @@ impl SidecarManager {
                     Err(_) => break,
                 }
             }
+            // EOF reached — process died or closed stdout
+            log::warn!("Sidecar stdout EOF — processen har avslutats");
+            dc.notify_waiters();
+            // Also wake all pending requests so they don't hang forever
+            let map = pending.lock().await;
+            for entry in map.values() {
+                entry.done.notify_one();
+            }
         });
 
-        // Wait for the "ready" message
-        let ready_timeout = tokio::time::timeout(
+        // Wait for the "ready" message with proper detection of process death
+        let dc_clone = disconnected.clone();
+        let ready_result = tokio::time::timeout(
             std::time::Duration::from_secs(30),
             async {
-                // The ready message has no request_id, it was already consumed by the reader above.
-                // We just wait a brief moment for it to arrive.
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                tokio::select! {
+                    _ = ready_signal.notified() => Ok(()),
+                    _ = dc_clone.notified() => Err("Sidecar-processen avslutades oväntat vid uppstart".to_string()),
+                }
             },
         )
         .await;
 
-        if ready_timeout.is_err() {
-            return Err("Timeout vid start av Python-sidecar".to_string());
+        match ready_result {
+            Err(_) => {
+                return Err("Timeout (30s): Python-sidecar skickade aldrig 'ready'".to_string());
+            }
+            Ok(Err(e)) => {
+                return Err(e);
+            }
+            Ok(Ok(())) => {
+                log::info!("Sidecar redo");
+            }
         }
 
-        Ok(SidecarProcess { child, stdin })
+        Ok(SidecarProcess { child, stdin, disconnected })
     }
 
     /// Send a JSON command and wait for the "end" sentinel.
@@ -197,6 +254,15 @@ impl SidecarManager {
             .to_string();
 
         let done = Arc::new(Notify::new());
+
+        // Get the disconnected signal for the current process
+        let disconnected = {
+            let guard = self.inner.lock().await;
+            guard
+                .as_ref()
+                .map(|p| p.disconnected.clone())
+                .ok_or("Sidecar-process ej startad")?
+        };
 
         // Register pending request
         {
@@ -231,12 +297,21 @@ impl SidecarManager {
             }
         }
 
-        // Wait for "end" sentinel with timeout (10 min for long transcriptions)
-        let wait_result = tokio::time::timeout(
-            std::time::Duration::from_secs(600),
-            done.notified(),
-        )
-        .await;
+        // Wait for "end" sentinel, process death, or timeout (2h for long transcriptions)
+        let process_died = {
+            let dc = disconnected.clone();
+            let d = done.clone();
+            tokio::time::timeout(
+                std::time::Duration::from_secs(7200),
+                async {
+                    tokio::select! {
+                        _ = d.notified() => false,
+                        _ = dc.notified() => true,
+                    }
+                },
+            )
+            .await
+        };
 
         // Collect events and clean up
         let events = {
@@ -246,8 +321,29 @@ impl SidecarManager {
                 .unwrap_or_default()
         };
 
-        if wait_result.is_err() {
-            return Err("Timeout: sidecar svarade inte inom 10 minuter".to_string());
+        match process_died {
+            Err(_) => {
+                return Err("Timeout: sidecar svarade inte inom 2 timmar".to_string());
+            }
+            Ok(true) => {
+                // Process died — check if we got error events before dying
+                for ev in &events {
+                    if ev.get("type").and_then(|v| v.as_str()) == Some("error") {
+                        let msg = ev
+                            .get("message")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Okänt fel")
+                            .to_string();
+                        return Err(msg);
+                    }
+                }
+                // Clear the dead process so next call will respawn
+                *self.inner.lock().await = None;
+                return Err("Sidecar-processen avslutades oväntat".to_string());
+            }
+            Ok(false) => {
+                // Normal completion — check for error events
+            }
         }
 
         // Check if there was an error event (last one wins)
@@ -295,8 +391,8 @@ impl SidecarManager {
         Ok(())
     }
 
-    /// Warm up models in the sidecar.
-    pub async fn warmup(&self, app: &AppHandle) -> Result<(), String> {
+    /// Warm up models in the sidecar. Returns whether diarization is available.
+    pub async fn warmup(&self, app: &AppHandle) -> Result<bool, String> {
         let req_id = Uuid::new_v4().to_string();
 
         let cmd = serde_json::json!({
@@ -308,8 +404,15 @@ impl SidecarManager {
             }
         });
 
-        self.send_command(cmd, app).await?;
-        Ok(())
+        let events = self.send_command(cmd, app).await?;
+
+        let diarization_available = events.iter().any(|ev| {
+            ev.get("diarization_available")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        });
+
+        Ok(diarization_available)
     }
 
     /// Shut down the sidecar process gracefully.

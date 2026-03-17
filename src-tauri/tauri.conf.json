@@ -27,8 +27,27 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
     }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "resources": ["sidecar/**/*"],
+    "windows": {
+      "nsis": {
+        "languages": ["Swedish"],
+        "installMode": "currentUser"
+      }
+    },
+    "publisher": "MötesSkribent",
+    "shortDescription": "Lokal mötesanteckning med AI"
   },
   "plugins": {
     "shell": {

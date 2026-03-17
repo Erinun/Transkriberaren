@@ -28,6 +28,10 @@ pub enum PipelineEvent {
         success: bool,
         output_files: Vec<String>,
         summary: serde_json::Value,
+        #[serde(default)]
+        md_content: Option<String>,
+        #[serde(default)]
+        warnings: Vec<String>,
     },
     #[serde(rename = "error")]
     Error { message: String, stage: String },

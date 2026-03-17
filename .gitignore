@@ -35,5 +35,11 @@ htmlcov/
 # Claude Code
 .claude/
 
+# PyInstaller
+*.spec.bak
+
+# Tauri bundled sidecar (built, not committed)
+src-tauri/sidecar/
+
 # Windows artifacts
 nul

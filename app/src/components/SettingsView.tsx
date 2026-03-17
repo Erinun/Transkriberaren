@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 interface Settings {
   defaultModel: string;
   defaultNumSpeakers: string;
-  defaultFormats: { markdown: boolean; json: boolean };
+  defaultFormats: { markdown: boolean; json: boolean; docx: boolean };
   vadEnabled: boolean;
 }
 
@@ -17,7 +17,7 @@ function loadSettings(): Settings {
   return {
     defaultModel: "KBLab/kb-whisper-small",
     defaultNumSpeakers: "",
-    defaultFormats: { markdown: true, json: true },
+    defaultFormats: { markdown: true, json: true, docx: false },
     vadEnabled: true,
   };
 }
@@ -97,6 +97,17 @@ export default function SettingsView() {
               className="accent-[var(--color-primary)]"
             />
             JSON
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={settings.defaultFormats.docx ?? false}
+              onChange={(e) =>
+                update("defaultFormats", { ...settings.defaultFormats, docx: e.target.checked })
+              }
+              className="accent-[var(--color-primary)]"
+            />
+            Word (.docx)
           </label>
         </div>
       </div>

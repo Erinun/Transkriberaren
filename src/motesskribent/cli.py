@@ -66,6 +66,8 @@ def _run_json_ipc(audio_file: Path, config):
             "type": "result",
             "success": True,
             "output_files": [str(f) for f in result.output_files],
+            "md_content": result.md_content,
+            "warnings": result.warnings,
             "summary": {
                 "total_duration": result.total_duration,
                 "speech_duration": result.speech_duration,

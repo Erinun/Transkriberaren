@@ -11,7 +11,7 @@ export interface PipelineSettings {
   prompt: string | null;
 }
 
-interface PipelineSummary {
+export interface PipelineSummary {
   total_duration: number;
   speech_duration: number;
   processing_time: number;
@@ -29,6 +29,8 @@ interface PipelineState {
   error: string | null;
   outputFiles: string[];
   summary: PipelineSummary | null;
+  mdContent: string | null;
+  warnings: string[];
 }
 
 const INITIAL_STATE: PipelineState = {
@@ -39,6 +41,8 @@ const INITIAL_STATE: PipelineState = {
   error: null,
   outputFiles: [],
   summary: null,
+  mdContent: null,
+  warnings: [],
 };
 
 export function usePipeline() {
@@ -64,6 +68,8 @@ export function usePipeline() {
           percent: 100,
           outputFiles: data.output_files,
           summary: data.summary,
+          mdContent: data.md_content ?? null,
+          warnings: data.warnings ?? [],
         }));
       } else if (data.type === "error") {
         setState((s) => {
