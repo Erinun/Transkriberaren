@@ -1,24 +1,23 @@
 """
-Talarseparering med pyannote-audio.
+Talarseparering med diarize-biblioteket.
 
-Använder pyannote/speaker-diarization-3.1 för att identifiera
-vem som pratar när i en ljudfil. pyannote 3.1 kör ren PyTorch
-på CPU by default (ONNX Runtime-backend behövs inte).
+Använder diarize (FoxNoseTech, Apache 2.0) för att identifiera
+vem som pratar när i en ljudfil. Baseras på Silero VAD +
+WeSpeaker ONNX-embeddings + spektral klustring. Kräver ingen
+HuggingFace-token.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Module-level pipeline cache
-_cached_pipeline = None
-_cached_pipeline_key: str | None = None
+# Module-level warmup flag
+_models_warmed_up = False
 
 
 @dataclass
@@ -38,38 +37,16 @@ class DiarizationResult:
     processing_time: float
 
 
-def _get_pipeline(
-    hf_token: str | None = None,
-    model_name: str = "pyannote/speaker-diarization-3.1",
-):
-    """
-    Hämta eller skapa en cachad pyannote-pipeline.
-
-    HF-token löses i ordning: parameter > HF_TOKEN env > huggingface-cli login.
-    """
-    global _cached_pipeline, _cached_pipeline_key
-
-    if hf_token is None:
-        hf_token = os.environ.get("HF_TOKEN")
-
-    key = model_name
-
-    if _cached_pipeline is not None and _cached_pipeline_key == key:
-        logger.debug("Använder cachad pipeline: %s", key)
-        return _cached_pipeline
-
-    logger.info("Laddar diariseringspipeline: %s", model_name)
-
-    from pyannote.audio import Pipeline
-
-    pipeline = Pipeline.from_pretrained(
-        model_name,
-        token=hf_token,
-    )
-
-    _cached_pipeline = pipeline
-    _cached_pipeline_key = key
-    return pipeline
+def _warmup_models():
+    """Säkerställ att diarize-modellerna (Silero VAD + WeSpeaker) är nedladdade."""
+    global _models_warmed_up
+    if _models_warmed_up:
+        return
+    from silero_vad import load_silero_vad
+    import wespeakerruntime as wespeaker_rt
+    load_silero_vad()
+    wespeaker_rt.Speaker(lang="en")
+    _models_warmed_up = True
 
 
 def _merge_segments(
@@ -112,7 +89,7 @@ def _merge_segments(
 
 def _assign_labels(segments: list[SpeakerSegment]) -> list[SpeakerSegment]:
     """
-    Mappa pyannote speaker-ID (SPEAKER_00) till läsbara etiketter (Talare 1).
+    Mappa speaker-ID till läsbara etiketter (Talare 1, Talare 2, ...).
 
     Etiketter tilldelas i ordning av första uppträdande i inspelningen.
     """
@@ -133,7 +110,6 @@ def diarize(
     num_speakers: int | None = None,
     min_speakers: int = 2,
     max_speakers: int = 10,
-    hf_token: str | None = None,
     merge_gap: float = 1.5,
 ) -> DiarizationResult:
     """
@@ -144,38 +120,37 @@ def diarize(
         num_speakers: Exakt antal talare (None = auto-detect).
         min_speakers: Minsta antal talare vid auto-detect.
         max_speakers: Maximalt antal talare vid auto-detect.
-        hf_token: HuggingFace-token (annars HF_TOKEN env eller huggingface-cli login).
         merge_gap: Max gap i sekunder för att merga segment från samma talare.
 
     Returns:
         DiarizationResult med talarsegment och metadata.
     """
+    from diarize import diarize as _lib_diarize
+
     audio_path = Path(audio_path)
     if not audio_path.exists():
         raise FileNotFoundError(f"Ljudfilen finns inte: {audio_path}")
 
-    pipeline = _get_pipeline(hf_token=hf_token)
-
     logger.info("Startar diarisering av: %s", audio_path.name)
     start_time = time.perf_counter()
 
-    # Bygg kwargs för pipeline-anrop
-    kwargs = {}
+    # Bygg kwargs för diarize-anrop
+    kwargs: dict = {"audio": str(audio_path)}
     if num_speakers is not None:
         kwargs["num_speakers"] = num_speakers
     else:
         kwargs["min_speakers"] = min_speakers
         kwargs["max_speakers"] = max_speakers
 
-    annotation = pipeline(str(audio_path), **kwargs)
+    result = _lib_diarize(**kwargs)
 
-    # Konvertera Annotation till SpeakerSegment-lista
+    # Konvertera till SpeakerSegment-lista
     raw_segments: list[SpeakerSegment] = []
-    for turn, _, speaker in annotation.itertracks(yield_label=True):
+    for seg in result:
         raw_segments.append(SpeakerSegment(
-            start=turn.start,
-            end=turn.end,
-            speaker_id=speaker,
+            start=seg.start,
+            end=seg.end,
+            speaker_id=seg.speaker,
             speaker_label="",  # Tilldelas nedan
         ))
 

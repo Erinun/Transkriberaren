@@ -27,7 +27,6 @@ class PipelineConfig:
     num_speakers: int | None = None
     min_speakers: int = 2
     max_speakers: int = 10
-    hf_token: str | None = None
     output_dir: Path = field(default_factory=lambda: Path("output"))
     output_formats: list[str] = field(default_factory=lambda: ["markdown", "json"])
     include_word_timestamps: bool = False
@@ -44,6 +43,8 @@ class PipelineResult:
     speech_duration: float
     processing_time: float
     processing_breakdown: dict[str, float]
+    md_content: str | None = None
+    warnings: list[str] = field(default_factory=list)
 
 
 def _assign_speakers(
@@ -99,7 +100,7 @@ def run_pipeline(
     from datetime import datetime
 
     from motesskribent.audio.preprocessor import preprocess_audio
-    from motesskribent.output.formatter import merge_short_segments, to_json, to_markdown
+    from motesskribent.output.formatter import merge_short_segments, to_docx, to_json, to_markdown
 
     audio_path = Path(audio_path)
     if not audio_path.exists():
@@ -124,8 +125,10 @@ def run_pipeline(
     # 2. Diarisering
     diarization_segments = []
     num_speakers = 0
+    diarization_failed = False
     skip_diarization = config.num_speakers is not None and config.num_speakers <= 1
     t0 = time.perf_counter()
+    warnings: list[str] = []
 
     if skip_diarization:
         logger.info("Hoppar över diarisering (num_speakers=%s)", config.num_speakers)
@@ -139,12 +142,14 @@ def run_pipeline(
                 num_speakers=config.num_speakers,
                 min_speakers=config.min_speakers,
                 max_speakers=config.max_speakers,
-                hf_token=config.hf_token,
             )
             diarization_segments = diar_result.segments
             num_speakers = diar_result.num_speakers
         except Exception:
             logger.warning("Diarisering misslyckades, fortsätter utan talare", exc_info=True)
+            num_speakers = 1
+            diarization_failed = True
+            warnings.append("Talarseparering ej tillgänglig")
 
     breakdown["diarization"] = time.perf_counter() - t0
     _progress("diarization", 0.35)
@@ -170,7 +175,7 @@ def run_pipeline(
     # 4. Matcha talare
     segments = _assign_speakers(trans_result.segments, diarization_segments)
 
-    if skip_diarization:
+    if skip_diarization or diarization_failed:
         for seg in segments:
             seg.speaker_id = "SPEAKER_00"
             seg.speaker_label = "Talare 1"
@@ -191,6 +196,7 @@ def run_pipeline(
 
     output_files: list[Path] = []
     stem = audio_path.stem
+    md_content: str | None = None
 
     if "markdown" in config.output_formats:
         md_content = to_markdown(segments, metadata)
@@ -205,6 +211,15 @@ def run_pipeline(
         json_path.write_text(json_content, encoding="utf-8")
         output_files.append(json_path)
         logger.info("Sparade JSON: %s", json_path)
+
+    if "docx" in config.output_formats:
+        try:
+            docx_path = config.output_dir / f"{stem}.docx"
+            to_docx(segments, metadata, str(docx_path))
+            output_files.append(docx_path)
+            logger.info("Sparade Word: %s", docx_path)
+        except ImportError:
+            logger.error("python-docx är inte installerat — hoppar över .docx-export")
 
     breakdown["formatting"] = time.perf_counter() - t0
     _progress("formatting", 1.0)
@@ -221,4 +236,6 @@ def run_pipeline(
         speech_duration=preprocessed.duration_speech,
         processing_time=total_time,
         processing_breakdown=breakdown,
+        md_content=md_content,
+        warnings=warnings,
     )

@@ -9,11 +9,12 @@ description = "Lokal mötesanteckning med AI — transkribering och talarseparer
 requires-python = ">=3.10"
 dependencies = [
     "faster-whisper>=1.1.0",
-    "pyannote.audio>=3.3.0",
+    "diarize>=0.1.0",
     "soundfile>=0.12.0",
     "numpy>=1.24.0",
     "click>=8.1.0",
     "rich>=13.0.0",
+    "python-docx>=1.1.0",
 ]
 
 [project.optional-dependencies]

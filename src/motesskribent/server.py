@@ -29,7 +29,7 @@ def _handle_ping(request_id: str) -> None:
 
 
 def _handle_warmup(request_id: str, config: dict) -> None:
-    """Load models into memory. Parallelizes whisper + pyannote loading."""
+    """Load models into memory. Parallelizes whisper + diarize loading."""
     model = config.get("model", "KBLab/kb-whisper-small")
     num_speakers = config.get("num_speakers")
     need_diarizer = num_speakers is None or num_speakers > 1
@@ -47,8 +47,8 @@ def _handle_warmup(request_id: str, config: dict) -> None:
         _get_model(model)
 
     def load_diarizer():
-        from motesskribent.diarization.diarizer import _get_pipeline
-        _get_pipeline()
+        from motesskribent.diarization.diarizer import _warmup_models
+        _warmup_models()
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         futures = [pool.submit(load_transcriber)]
@@ -56,9 +56,20 @@ def _handle_warmup(request_id: str, config: dict) -> None:
             futures.append(pool.submit(load_diarizer))
         wait(futures)
 
-        # Re-raise any exceptions from model loading
-        for f in futures:
-            f.result()
+        # Check for errors — transcriber is required, diarizer is optional
+        transcriber_future = futures[0]
+        transcriber_future.result()  # Re-raise if transcriber failed
+
+        diarizer_ok = True
+        if need_diarizer and len(futures) > 1:
+            diarizer_future = futures[1]
+            try:
+                diarizer_future.result()
+            except Exception as e:
+                diarizer_ok = False
+                logger.warning("Diariser-modell kunde inte laddas (fortsätter ändå): %s", e)
+        elif not need_diarizer:
+            diarizer_ok = True
 
     _emit({
         "request_id": request_id,
@@ -66,6 +77,7 @@ def _handle_warmup(request_id: str, config: dict) -> None:
         "stage": "warmup",
         "percent": 100,
         "message": "Modeller laddade",
+        "diarization_available": diarizer_ok,
     })
 
 
@@ -98,6 +110,8 @@ def _handle_transcribe(request_id: str, audio_path: str, config: dict) -> None:
         "type": "result",
         "success": True,
         "output_files": [str(f) for f in result.output_files],
+        "md_content": result.md_content,
+        "warnings": result.warnings,
         "summary": {
             "total_duration": result.total_duration,
             "speech_duration": result.speech_duration,

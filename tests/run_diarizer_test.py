@@ -6,9 +6,8 @@ Användning:
     python tests/run_diarizer_test.py <ljud.wav> --num-speakers 3
 
 Kräver:
-    - HF_TOKEN miljövariabel eller huggingface-cli login
-    - Accepterad licens för pyannote/speaker-diarization-3.1
-    - Accepterad licens för pyannote/segmentation-3.0
+    - diarize-biblioteket installerat (pip install diarize)
+    - Ingen HF-token behövs — modeller laddas ned automatiskt
 """
 
 import sys
