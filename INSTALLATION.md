@@ -2,7 +2,7 @@
 
 ## 1. Ladda ner
 
-Gå till [Releases-sidan på GitHub](https://github.com/Erinun/Transkriberaren/releases/latest) och ladda ner filen **MötesSkribent_0.1.0_x64-setup.exe**.
+Gå till [Releases-sidan på GitHub](https://github.com/Erinun/Transkriberaren/releases/latest) och ladda ner filen **MötesSkribent_0.2.0_x64-setup.exe**.
 
 ## 2. Installera
 
@@ -23,7 +23,7 @@ Appen fungerar **helt offline** — alla AI-modeller för transkribering och tal
 1. **Välj ljudfil** — Klicka "Välj ljudfil" och välj en inspelning (WAV, MP3, M4A, etc.)
 2. **Ange antal talare** — Ställ in hur många personer som deltog i mötet
 3. **Transkribera** — Klicka "Transkribera" och vänta medan appen bearbetar ljudet
-4. **Spara** — Resultatet visas som ett mötesprotokoll med talarmarkeringar, redo att sparas som Markdown-fil
+4. **Spara** — Resultatet visas som ett mötesprotokoll med talarmarkeringar, redo att sparas som Markdown- eller Word-fil (DOCX)
 
 ## 5. Avinstallera
 
