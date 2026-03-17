@@ -1,9 +1,11 @@
 import Logo from "./Logo";
+import type { OllamaStatus } from "../hooks/useOllama";
 
 interface Props {
   onNavigate: (view: "recording" | "transcribe" | "settings") => void;
   sidecarReady: boolean;
   onInfoClick: () => void;
+  ollamaStatus: OllamaStatus;
 }
 
 const CARDS = [
@@ -60,7 +62,7 @@ const CARDS = [
   },
 ];
 
-export default function DashboardView({ onNavigate, sidecarReady, onInfoClick }: Props) {
+export default function DashboardView({ onNavigate, sidecarReady, onInfoClick, ollamaStatus }: Props) {
   return (
     <div className="flex flex-col items-center justify-center min-h-full py-8 animate-fade-in">
       {/* Logo + title */}
@@ -89,13 +91,33 @@ export default function DashboardView({ onNavigate, sidecarReady, onInfoClick }:
         ))}
       </div>
 
-      {/* Sidecar status */}
-      {!sidecarReady && (
-        <div className="flex items-center gap-2 mt-8 text-xs text-[var(--color-text-muted)]">
-          <div className="w-3 h-3 border-2 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin" />
-          <span>AI-motor startar...</span>
+      {/* Status indicators */}
+      <div className="flex flex-col items-center gap-2 mt-8">
+        {!sidecarReady && (
+          <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+            <div className="w-3 h-3 border-2 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin" />
+            <span>AI-motor startar...</span>
+          </div>
+        )}
+        <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+          {ollamaStatus.available === null ? (
+            <>
+              <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+              <span>Kontrollerar Ollama...</span>
+            </>
+          ) : ollamaStatus.available ? (
+            <>
+              <div className="w-2 h-2 rounded-full bg-green-400" />
+              <span>Ollama aktiv ({ollamaStatus.models.length} {ollamaStatus.models.length === 1 ? "modell" : "modeller"})</span>
+            </>
+          ) : (
+            <>
+              <div className="w-2 h-2 rounded-full bg-gray-500" />
+              <span>Ollama ej ansluten</span>
+            </>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Info button */}
       <button

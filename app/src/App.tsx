@@ -11,6 +11,7 @@ import SettingsView from "./components/SettingsView";
 import RecordingView from "./components/RecordingView";
 import { usePipeline, type PipelineSettings } from "./hooks/usePipeline";
 import { useHistory, type HistoryEntry } from "./hooks/useHistory";
+import { useOllamaStatus } from "./hooks/useOllama";
 
 type View = "dashboard" | "transcribe" | "processing" | "result" | "settings" | "recording";
 type SidecarStatus = "starting" | "warming_up" | "ready" | "error";
@@ -73,6 +74,12 @@ export default function App() {
   const [infoOpen, setInfoOpen] = useState(false);
   const pipeline = usePipeline();
   const history = useHistory();
+  const ollamaStatus = useOllamaStatus();
+
+  // Check Ollama health on mount
+  useEffect(() => {
+    ollamaStatus.checkHealth();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Track the audio file name for the current transcription
   const [currentAudioName, setCurrentAudioName] = useState<string>("");
@@ -169,6 +176,9 @@ export default function App() {
         summary: viewingHistory!.summary,
         mdContent: viewingHistory!.mdContent,
         warnings: [],
+        segments: [],
+        modelName: viewingHistory!.modelName ?? null,
+        wordCount: viewingHistory!.wordCount ?? 0,
         onBack: () => {
           setViewingHistory(null);
           setActiveView("dashboard");
@@ -181,7 +191,15 @@ export default function App() {
         summary: pipeline.summary,
         mdContent: pipeline.mdContent,
         warnings: pipeline.warnings,
+        segments: pipeline.segments,
+        modelName: pipeline.modelName,
+        wordCount: pipeline.wordCount,
         onBack: () => {
+          pipeline.reset();
+          setViewingHistory(null);
+          setActiveView("transcribe");
+        },
+        onRetranscribe: () => {
           pipeline.reset();
           setViewingHistory(null);
           setActiveView("transcribe");
@@ -236,13 +254,14 @@ export default function App() {
       )}
 
       {/* Content */}
-      <main className="flex-1 overflow-y-auto p-6">
-        <div>
+      <main className={`flex-1 ${activeView === "result" ? "overflow-hidden" : "overflow-y-auto p-6"}`}>
+        <div className={activeView === "result" ? "h-full" : ""}>
           {activeView === "dashboard" && (
             <DashboardView
               onNavigate={setActiveView}
               sidecarReady={sidecarReady}
               onInfoClick={() => setInfoOpen(true)}
+              ollamaStatus={ollamaStatus}
             />
           )}
           {activeView === "transcribe" && (
@@ -260,8 +279,8 @@ export default function App() {
               message={pipeline.message}
             />
           )}
-          {activeView === "result" && <ResultView {...resultProps} />}
-          {activeView === "settings" && <SettingsView />}
+          {activeView === "result" && <ResultView {...resultProps} ollamaStatus={ollamaStatus} />}
+          {activeView === "settings" && <SettingsView ollamaStatus={ollamaStatus} />}
           {activeView === "recording" && (
             <RecordingView
               onRecordingComplete={handleRecordingComplete}

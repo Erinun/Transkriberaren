@@ -68,6 +68,18 @@ def _run_json_ipc(audio_file: Path, config):
             "output_files": [str(f) for f in result.output_files],
             "md_content": result.md_content,
             "warnings": result.warnings,
+            "model_name": str(config.model_path),
+            "word_count": sum(len(seg.text.split()) for seg in result.segments),
+            "segments": [
+                {
+                    "start": seg.start,
+                    "end": seg.end,
+                    "speaker_id": seg.speaker_id,
+                    "speaker_label": seg.speaker_label,
+                    "text": seg.text,
+                }
+                for seg in result.segments
+            ],
             "summary": {
                 "total_duration": result.total_duration,
                 "speech_duration": result.speech_duration,

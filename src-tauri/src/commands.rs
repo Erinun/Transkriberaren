@@ -91,6 +91,26 @@ pub async fn copy_file_to(source: String, destination: String) -> Result<(), Str
         .map_err(|e| format!("Kunde inte spara filen: {}", e))
 }
 
+#[tauri::command]
+pub async fn ollama_check_health() -> bool {
+    crate::ollama::check_health().await
+}
+
+#[tauri::command]
+pub async fn ollama_list_models() -> Result<Vec<crate::ollama::OllamaModel>, String> {
+    crate::ollama::list_models().await
+}
+
+#[tauri::command]
+pub async fn ollama_generate(
+    app: AppHandle,
+    model: String,
+    prompt: String,
+    request_id: String,
+) -> Result<String, String> {
+    crate::ollama::generate_streaming(&app, &model, &prompt, &request_id).await
+}
+
 pub fn find_python(_app: &AppHandle) -> Result<String, String> {
     // 1. Check MOTESSKRIBENT_PYTHON env var (explicit override)
     if let Ok(p) = std::env::var("MOTESSKRIBENT_PYTHON") {

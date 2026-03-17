@@ -20,6 +20,14 @@ export interface PipelineSummary {
   num_segments: number;
 }
 
+export interface TranscriptionSegment {
+  start: number;
+  end: number;
+  speaker_id: string | null;
+  speaker_label: string | null;
+  text: string;
+}
+
 type PipelineStatus = "idle" | "running" | "done" | "error";
 
 interface PipelineState {
@@ -32,6 +40,9 @@ interface PipelineState {
   summary: PipelineSummary | null;
   mdContent: string | null;
   warnings: string[];
+  modelName: string | null;
+  segments: TranscriptionSegment[];
+  wordCount: number;
 }
 
 const INITIAL_STATE: PipelineState = {
@@ -44,6 +55,9 @@ const INITIAL_STATE: PipelineState = {
   summary: null,
   mdContent: null,
   warnings: [],
+  modelName: null,
+  segments: [],
+  wordCount: 0,
 };
 
 export function usePipeline() {
@@ -71,6 +85,9 @@ export function usePipeline() {
           summary: data.summary,
           mdContent: data.md_content ?? null,
           warnings: data.warnings ?? [],
+          modelName: data.model_name ?? null,
+          segments: data.segments ?? [],
+          wordCount: data.word_count ?? 0,
         }));
       } else if (data.type === "error") {
         setState((s) => {

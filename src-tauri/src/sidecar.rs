@@ -33,6 +33,12 @@ pub enum PipelineEvent {
         md_content: Option<String>,
         #[serde(default)]
         warnings: Vec<String>,
+        #[serde(default)]
+        model_name: Option<String>,
+        #[serde(default)]
+        segments: Option<Vec<serde_json::Value>>,
+        #[serde(default)]
+        word_count: Option<u32>,
     },
     #[serde(rename = "error")]
     Error { message: String, stage: String },

@@ -1,10 +1,11 @@
 mod audio_capture;
 mod commands;
+mod ollama;
 mod sidecar;
 mod sidecar_manager;
 
 use audio_capture::RecorderState;
-use commands::{copy_file_to, get_default_output_dir, open_file, read_file_content, run_transcription, start_recording, stop_recording, write_text_to_file};
+use commands::{copy_file_to, get_default_output_dir, ollama_check_health, ollama_generate, ollama_list_models, open_file, read_file_content, run_transcription, start_recording, stop_recording, write_text_to_file};
 use sidecar_manager::SidecarManager;
 use tauri::{Emitter, Manager};
 
@@ -59,6 +60,9 @@ pub fn run() {
             read_file_content,
             copy_file_to,
             write_text_to_file,
+            ollama_check_health,
+            ollama_list_models,
+            ollama_generate,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
