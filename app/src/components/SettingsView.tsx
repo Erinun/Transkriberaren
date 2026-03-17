@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 interface Settings {
   defaultModel: string;
@@ -41,7 +41,7 @@ export default function SettingsView() {
   };
 
   return (
-    <div className="max-w-xl mx-auto space-y-6">
+    <div className="max-w-xl mx-auto space-y-6 animate-fade-in">
       <h2 className="text-2xl font-bold">Inställningar</h2>
 
       {/* Default model */}
@@ -50,7 +50,7 @@ export default function SettingsView() {
         <select
           value={settings.defaultModel}
           onChange={(e) => update("defaultModel", e.target.value)}
-          className="w-full px-3 py-2 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] text-sm focus:outline-none focus:border-[var(--color-primary)]"
+          className="w-full px-3 py-2 rounded-lg glass-input text-sm"
         >
           <option value="KBLab/kb-whisper-small">Small (~460 MB)</option>
           <option value="KBLab/kb-whisper-medium">Medium (~1.5 GB)</option>
@@ -68,7 +68,7 @@ export default function SettingsView() {
           placeholder="Auto"
           value={settings.defaultNumSpeakers}
           onChange={(e) => update("defaultNumSpeakers", e.target.value)}
-          className="w-32 px-3 py-2 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] text-sm focus:outline-none focus:border-[var(--color-primary)]"
+          className="w-32 px-3 py-2 rounded-lg glass-input text-sm"
         />
       </div>
 
@@ -128,7 +128,7 @@ export default function SettingsView() {
       <div className="flex items-center gap-3">
         <button
           onClick={handleSave}
-          className="px-4 py-2 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-sm transition-colors"
+          className="px-4 py-2 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-sm transition-all hover:shadow-[0_0_20px_rgba(124,58,237,0.25)]"
         >
           Spara
         </button>

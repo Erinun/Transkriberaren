@@ -27,14 +27,19 @@ export default function RecordingView({ onRecordingComplete, settings }: Props) 
   };
 
   return (
-    <div className="max-w-md mx-auto mt-16 text-center space-y-6">
+    <div className="max-w-md mx-auto mt-16 text-center space-y-6 animate-fade-in">
       {/* Microphone icon */}
       <div
-        className={`w-20 h-20 mx-auto rounded-full flex items-center justify-center transition-colors ${
+        className={`w-20 h-20 mx-auto rounded-full flex items-center justify-center glass transition-all ${
           recorder.status === "recording"
-            ? "bg-[var(--color-error)]/15 border-2 border-[var(--color-error)]"
-            : "bg-[var(--color-surface)] border border-[var(--color-border)]"
+            ? "border-[var(--color-error)]"
+            : ""
         }`}
+        style={
+          recorder.status === "recording"
+            ? { boxShadow: "0 0 24px rgba(239, 68, 68, 0.3)" }
+            : {}
+        }
       >
         <svg
           className={`w-10 h-10 ${
@@ -77,7 +82,8 @@ export default function RecordingView({ onRecordingComplete, settings }: Props) 
           <button
             onClick={handleStop}
             disabled={recorder.status !== "recording"}
-            className="px-6 py-3 rounded-lg bg-[var(--color-error)] hover:bg-[var(--color-error)]/80 text-white font-medium text-sm transition-colors"
+            className="px-6 py-3 rounded-lg bg-[var(--color-error)] hover:bg-[var(--color-error)]/80 text-white font-medium text-sm transition-all"
+            style={{ boxShadow: "0 0 20px rgba(239, 68, 68, 0.25)" }}
           >
             Stoppa inspelning
           </button>
@@ -91,10 +97,10 @@ export default function RecordingView({ onRecordingComplete, settings }: Props) 
           <button
             onClick={handleStart}
             disabled={recorder.status === "stopping"}
-            className={`px-6 py-3 rounded-lg font-medium text-sm transition-colors ${
+            className={`px-6 py-3 rounded-lg font-medium text-sm transition-all ${
               recorder.status === "stopping"
-                ? "bg-[var(--color-surface)] text-[var(--color-text-muted)] cursor-not-allowed"
-                : "bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white"
+                ? "glass text-[var(--color-text-muted)] cursor-not-allowed"
+                : "bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white hover:shadow-[0_0_20px_rgba(124,58,237,0.25)]"
             }`}
           >
             {recorder.status === "stopping" ? "Stoppar..." : "Starta inspelning"}
@@ -104,7 +110,7 @@ export default function RecordingView({ onRecordingComplete, settings }: Props) 
 
       {/* Error message */}
       {recorder.error && (
-        <p className="text-sm text-[var(--color-error)] bg-[var(--color-error)]/10 rounded-lg px-4 py-2">
+        <p className="text-sm text-[var(--color-error)] glass rounded-xl px-4 py-2" style={{ borderColor: "rgba(239, 68, 68, 0.3)" }}>
           {recorder.error}
         </p>
       )}

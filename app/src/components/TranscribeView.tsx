@@ -66,23 +66,23 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
   };
 
   return (
-    <div className="max-w-xl mx-auto space-y-6">
+    <div className="max-w-xl mx-auto space-y-6 animate-fade-in">
       <h2 className="text-2xl font-bold">Transkribera ljudfil</h2>
 
-      {/* File picker */}
+      {/* File picker — drop zone style */}
       <div className="space-y-2">
         <label className="block text-sm text-[var(--color-text-muted)]">Ljudfil</label>
-        <div className="flex gap-3">
-          <button
-            onClick={handlePickFile}
-            className="px-4 py-2 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] hover:bg-[var(--color-surface-hover)] transition-colors text-sm"
-          >
-            Välj fil...
-          </button>
-          <span className="py-2 text-sm text-[var(--color-text-muted)] truncate flex-1">
-            {filePath ?? "Ingen fil vald"}
+        <button
+          onClick={handlePickFile}
+          className="w-full p-6 rounded-xl border-2 border-dashed border-[rgba(255,255,255,0.1)] hover:border-[var(--color-primary)] hover:bg-white/[0.02] transition-all flex flex-col items-center gap-2 group"
+        >
+          <svg className="w-8 h-8 text-[var(--color-text-muted)] group-hover:text-[var(--color-primary)] transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+          </svg>
+          <span className="text-sm text-[var(--color-text-muted)] group-hover:text-[var(--color-text)] transition-colors">
+            {filePath ? filePath.split(/[\\/]/).pop() : "Klicka för att välja fil..."}
           </span>
-        </div>
+        </button>
       </div>
 
       {/* Model */}
@@ -91,7 +91,7 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
         <select
           value={model}
           onChange={(e) => setModel(e.target.value)}
-          className="w-full px-3 py-2 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] text-sm focus:outline-none focus:border-[var(--color-primary)]"
+          className="w-full px-3 py-2 rounded-lg glass-input text-sm"
         >
           {MODELS.map((m) => (
             <option key={m.id} value={m.id}>
@@ -112,7 +112,7 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
           value={diarizationAvailable ? numSpeakers : ""}
           onChange={(e) => setNumSpeakers(e.target.value)}
           disabled={!diarizationAvailable}
-          className={`w-32 px-3 py-2 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] text-sm focus:outline-none focus:border-[var(--color-primary)] ${
+          className={`w-32 px-3 py-2 rounded-lg glass-input text-sm ${
             !diarizationAvailable ? "opacity-50 cursor-not-allowed" : ""
           }`}
         />
@@ -175,10 +175,10 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
       <button
         onClick={handleStart}
         disabled={!filePath}
-        className={`w-full py-3 rounded-lg font-medium text-sm transition-colors ${
+        className={`w-full py-3 rounded-lg font-medium text-sm transition-all ${
           filePath
-            ? "bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white"
-            : "bg-[var(--color-surface)] text-[var(--color-text-muted)] cursor-not-allowed"
+            ? "bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white hover:glow-primary hover:shadow-[0_0_20px_rgba(124,58,237,0.25)]"
+            : "glass text-[var(--color-text-muted)] cursor-not-allowed"
         }`}
       >
         Transkribera
@@ -186,7 +186,7 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
 
       {/* History */}
       {history.length > 0 && (
-        <div className="space-y-3 pt-4 border-t border-[var(--color-border)]">
+        <div className="space-y-3 pt-4 border-t border-white/5">
           <h3 className="text-sm font-medium text-[var(--color-text-muted)]">
             Senaste transkriptioner
           </h3>
@@ -194,7 +194,7 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
             {history.map((entry) => (
               <div
                 key={entry.id}
-                className="flex items-center justify-between p-3 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)]"
+                className="flex items-center justify-between p-3 rounded-xl glass"
               >
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium truncate">{entry.audioName}</p>
@@ -208,7 +208,7 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
                 </div>
                 <button
                   onClick={() => onViewHistory(entry)}
-                  className="ml-3 px-3 py-1.5 rounded-md text-xs bg-[var(--color-surface-hover)] hover:bg-[var(--color-border)] transition-colors"
+                  className="ml-3 px-3 py-1.5 rounded-md text-xs glass hover:bg-white/5 transition-colors"
                 >
                   Visa
                 </button>

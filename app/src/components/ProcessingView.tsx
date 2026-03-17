@@ -15,24 +15,37 @@ export default function ProcessingView({ stage, percent, message }: Props) {
   const label = STAGE_LABELS[stage] ?? message ?? "Startar...";
 
   return (
-    <div className="max-w-md mx-auto mt-24 space-y-8 text-center">
-      {/* Spinner */}
-      <div className="flex justify-center">
-        <div className="w-16 h-16 border-4 border-[var(--color-border)] border-t-[var(--color-primary)] rounded-full animate-spin" />
-      </div>
+    <div className="max-w-md mx-auto mt-24 animate-fade-in">
+      <div className="glass-elevated rounded-2xl p-8 space-y-8 text-center">
+        {/* Spinner */}
+        <div className="flex justify-center">
+          <div
+            className="w-16 h-16 rounded-full animate-spin"
+            style={{
+              border: "4px solid rgba(255,255,255,0.06)",
+              borderTopColor: "var(--color-primary)",
+              boxShadow: "0 0 20px rgba(124, 58, 237, 0.2)",
+            }}
+          />
+        </div>
 
-      {/* Stage label */}
-      <div>
-        <p className="text-lg font-medium">{label}</p>
-        <p className="text-sm text-[var(--color-text-muted)] mt-1">{percent}%</p>
-      </div>
+        {/* Stage label */}
+        <div>
+          <p className="text-lg font-medium">{label}</p>
+          <p className="text-sm text-[var(--color-text-muted)] mt-1">{percent}%</p>
+        </div>
 
-      {/* Progress bar */}
-      <div className="w-full h-2 bg-[var(--color-surface)] rounded-full overflow-hidden">
-        <div
-          className="h-full bg-[var(--color-primary)] transition-all duration-500 ease-out rounded-full"
-          style={{ width: `${percent}%` }}
-        />
+        {/* Progress bar */}
+        <div className="w-full h-2 glass rounded-full overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-500 ease-out"
+            style={{
+              width: `${percent}%`,
+              background: "linear-gradient(90deg, #7c3aed, #a78bfa)",
+              boxShadow: "0 0 12px rgba(124, 58, 237, 0.4)",
+            }}
+          />
+        </div>
       </div>
     </div>
   );

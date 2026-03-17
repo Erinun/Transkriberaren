@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import Logo from "./components/Logo";
+import DashboardView from "./components/DashboardView";
+import InfoModal from "./components/InfoModal";
 import TranscribeView from "./components/TranscribeView";
 import ProcessingView from "./components/ProcessingView";
 import ResultView from "./components/ResultView";
@@ -9,7 +12,7 @@ import RecordingView from "./components/RecordingView";
 import { usePipeline, type PipelineSettings } from "./hooks/usePipeline";
 import { useHistory, type HistoryEntry } from "./hooks/useHistory";
 
-type View = "transcribe" | "processing" | "result" | "settings" | "recording";
+type View = "dashboard" | "transcribe" | "processing" | "result" | "settings" | "recording";
 type SidecarStatus = "starting" | "warming_up" | "ready" | "error";
 
 const NAV_ITEMS: { id: View; label: string }[] = [
@@ -57,20 +60,14 @@ function loadSettingsForRecording(): PipelineSettings {
   };
 }
 
-const STATUS_MESSAGES: Record<SidecarStatus, string> = {
-  starting: "Startar...",
-  warming_up: "Laddar modeller...",
-  ready: "",
-  error: "Kunde inte starta AI-motorn",
-};
-
 export default function App() {
-  const [activeView, setActiveView] = useState<View>("transcribe");
+  const [activeView, setActiveView] = useState<View>("dashboard");
   const [recordingSettings, setRecordingSettings] = useState<PipelineSettings>(
     loadSettingsForRecording
   );
   const [sidecarStatus, setSidecarStatus] = useState<SidecarStatus>("starting");
   const [diarizationAvailable, setDiarizationAvailable] = useState<boolean>(true);
+  const [infoOpen, setInfoOpen] = useState(false);
   const pipeline = usePipeline();
   const history = useHistory();
 
@@ -157,19 +154,7 @@ export default function App() {
     setActiveView("result");
   };
 
-  const appReady = sidecarStatus === "ready" || sidecarStatus === "error";
-
-  // Loading screen while sidecar is starting up
-  if (!appReady) {
-    return (
-      <div className="flex flex-col items-center justify-center h-screen gap-4">
-        <div className="w-10 h-10 border-4 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin" />
-        <p className="text-[var(--color-text-muted)] text-sm">
-          {STATUS_MESSAGES[sidecarStatus]}
-        </p>
-      </div>
-    );
-  }
+  const sidecarReady = sidecarStatus === "ready" || sidecarStatus === "error";
 
   // Determine what to show in ResultView
   const showingHistory = viewingHistory !== null && activeView === "result";
@@ -183,7 +168,7 @@ export default function App() {
         warnings: [],
         onBack: () => {
           setViewingHistory(null);
-          setActiveView("transcribe");
+          setActiveView("dashboard");
         },
       }
     : {
@@ -200,57 +185,91 @@ export default function App() {
         },
       };
 
+  const showHeader = activeView !== "dashboard";
+
   return (
     <div className="flex flex-col h-screen">
       {/* Header */}
-      <header className="flex items-center justify-between px-5 py-3 bg-[var(--color-surface)] border-b border-[var(--color-border)]">
-        <h1 className="text-lg font-semibold tracking-tight">MötesSkribent</h1>
-        <nav className="flex gap-1">
-          {NAV_ITEMS.map((item) => (
+      {showHeader && (
+        <header className="flex items-center justify-between px-5 py-3 glass border-t-0 border-x-0 rounded-none">
+          <button
+            onClick={() => {
+              setViewingHistory(null);
+              setActiveView("dashboard");
+            }}
+            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+          >
+            <Logo size={28} />
+            <span className="text-lg font-semibold tracking-tight">MötesSkribent</span>
+          </button>
+          <nav className="flex gap-1 items-center">
+            {NAV_ITEMS.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setViewingHistory(null);
+                  setActiveView(item.id);
+                }}
+                className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
+                  activeView === item.id
+                    ? "bg-[var(--color-primary)] text-white"
+                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/5"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
             <button
-              key={item.id}
-              onClick={() => {
-                setViewingHistory(null);
-                setActiveView(item.id);
-              }}
-              className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
-                activeView === item.id
-                  ? "bg-[var(--color-primary)] text-white"
-                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)]"
-              }`}
+              onClick={() => setInfoOpen(true)}
+              className="ml-2 w-8 h-8 rounded-full flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/5 transition-colors"
+              title="Information"
             >
-              {item.label}
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
             </button>
-          ))}
-        </nav>
-      </header>
+          </nav>
+        </header>
+      )}
 
       {/* Content */}
       <main className="flex-1 overflow-y-auto p-6">
-        {activeView === "transcribe" && (
-          <TranscribeView
-            onStart={handleStart}
-            history={history.entries}
-            onViewHistory={handleViewHistory}
-            diarizationAvailable={diarizationAvailable}
-          />
-        )}
-        {activeView === "processing" && (
-          <ProcessingView
-            stage={pipeline.stage}
-            percent={pipeline.percent}
-            message={pipeline.message}
-          />
-        )}
-        {activeView === "result" && <ResultView {...resultProps} />}
-        {activeView === "settings" && <SettingsView />}
-        {activeView === "recording" && (
-          <RecordingView
-            onRecordingComplete={handleRecordingComplete}
-            settings={recordingSettings}
-          />
-        )}
+        <div className={activeView !== "dashboard" ? "animate-fade-in" : ""}>
+          {activeView === "dashboard" && (
+            <DashboardView
+              onNavigate={setActiveView}
+              sidecarReady={sidecarReady}
+              onInfoClick={() => setInfoOpen(true)}
+            />
+          )}
+          {activeView === "transcribe" && (
+            <TranscribeView
+              onStart={handleStart}
+              history={history.entries}
+              onViewHistory={handleViewHistory}
+              diarizationAvailable={diarizationAvailable}
+            />
+          )}
+          {activeView === "processing" && (
+            <ProcessingView
+              stage={pipeline.stage}
+              percent={pipeline.percent}
+              message={pipeline.message}
+            />
+          )}
+          {activeView === "result" && <ResultView {...resultProps} />}
+          {activeView === "settings" && <SettingsView />}
+          {activeView === "recording" && (
+            <RecordingView
+              onRecordingComplete={handleRecordingComplete}
+              settings={recordingSettings}
+            />
+          )}
+        </div>
       </main>
+
+      {/* Info modal */}
+      <InfoModal isOpen={infoOpen} onClose={() => setInfoOpen(false)} />
     </div>
   );
 }

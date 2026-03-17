@@ -58,7 +58,7 @@ function renderMarkdown(content: string) {
     }
     // Horizontal rule
     if (line.match(/^-{3,}$/)) {
-      return <hr key={i} className="my-3 border-[var(--color-border)]" />;
+      return <hr key={i} className="my-3 border-white/5" />;
     }
     // Empty line
     if (line.trim() === "") {
@@ -147,14 +147,14 @@ export default function ResultView({
 
   if (status === "error") {
     return (
-      <div className="max-w-xl mx-auto mt-16 space-y-6">
-        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/30">
+      <div className="max-w-xl mx-auto mt-16 space-y-6 animate-fade-in">
+        <div className="p-4 rounded-xl glass" style={{ borderColor: "rgba(239, 68, 68, 0.3)" }}>
           <h3 className="text-[var(--color-error)] font-medium">Fel vid transkribering</h3>
           <p className="text-sm mt-1 text-[var(--color-text-muted)]">{error}</p>
         </div>
         <button
           onClick={onBack}
-          className="px-4 py-2 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] hover:bg-[var(--color-surface-hover)] text-sm transition-colors"
+          className="px-4 py-2 rounded-lg glass hover:bg-white/5 text-sm transition-colors"
         >
           Tillbaka
         </button>
@@ -163,9 +163,12 @@ export default function ResultView({
   }
 
   return (
-    <div className="max-w-2xl mx-auto mt-8 space-y-6">
+    <div className="max-w-2xl mx-auto mt-8 space-y-6 animate-fade-in">
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full bg-[var(--color-success)]/20 flex items-center justify-center">
+        <div
+          className="w-8 h-8 rounded-full bg-[var(--color-success)]/20 flex items-center justify-center"
+          style={{ boxShadow: "0 0 16px rgba(34, 197, 94, 0.2)" }}
+        >
           <svg className="w-5 h-5 text-[var(--color-success)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
@@ -175,7 +178,7 @@ export default function ResultView({
 
       {/* Warnings */}
       {warnings.length > 0 && (
-        <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+        <div className="p-3 rounded-xl glass" style={{ borderColor: "rgba(245, 158, 11, 0.3)" }}>
           {warnings.map((w, i) => (
             <p key={i} className="text-sm text-yellow-200">{w}</p>
           ))}
@@ -193,7 +196,7 @@ export default function ResultView({
           ].map((item) => (
             <div
               key={item.label}
-              className="p-3 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)]"
+              className="p-3 rounded-xl glass"
             >
               <p className="text-xs text-[var(--color-text-muted)]">{item.label}</p>
               <p className="text-lg font-semibold mt-0.5">{item.value}</p>
@@ -204,7 +207,7 @@ export default function ResultView({
 
       {/* Transcription content */}
       {mdContent !== null && (
-        <div className="rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] p-5 max-h-96 overflow-y-auto text-sm">
+        <div className="rounded-xl glass-elevated p-5 max-h-96 overflow-y-auto text-sm">
           {renderMarkdown(mdContent)}
         </div>
       )}
@@ -215,7 +218,7 @@ export default function ResultView({
           <button
             onClick={handleSaveAs}
             disabled={saving}
-            className="px-4 py-2 rounded-lg bg-[var(--color-primary)] text-white hover:opacity-90 text-sm transition-colors disabled:opacity-50"
+            className="px-4 py-2 rounded-lg bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] text-sm transition-all disabled:opacity-50 hover:shadow-[0_0_20px_rgba(124,58,237,0.25)]"
           >
             {saving ? "Sparar..." : "Spara som\u2026"}
           </button>
@@ -224,7 +227,7 @@ export default function ResultView({
           <button
             onClick={handleSaveDocx}
             disabled={saving}
-            className="px-4 py-2 rounded-lg bg-[var(--color-primary)] text-white hover:opacity-90 text-sm transition-colors disabled:opacity-50"
+            className="px-4 py-2 rounded-lg bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] text-sm transition-all disabled:opacity-50 hover:shadow-[0_0_20px_rgba(124,58,237,0.25)]"
           >
             {saving ? "Sparar..." : "Spara som Word\u2026"}
           </button>
@@ -232,14 +235,14 @@ export default function ResultView({
         {mdContent && (
           <button
             onClick={handleCopy}
-            className="px-4 py-2 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] hover:bg-[var(--color-surface-hover)] text-sm transition-colors"
+            className="px-4 py-2 rounded-lg glass hover:bg-white/5 text-sm transition-colors"
           >
             {copied ? "Kopierat!" : "Kopiera text"}
           </button>
         )}
         <button
           onClick={onBack}
-          className="px-4 py-2 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] hover:bg-[var(--color-surface-hover)] text-sm transition-colors"
+          className="px-4 py-2 rounded-lg glass hover:bg-white/5 text-sm transition-colors"
         >
           Ny transkribering
         </button>
