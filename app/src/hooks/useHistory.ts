@@ -7,6 +7,8 @@ export interface HistoryEntry {
   date: string;
   mdContent: string;
   summary: PipelineSummary;
+  modelName?: string | null;
+  wordCount?: number;
 }
 
 const STORAGE_KEY = "motesskribent-history";

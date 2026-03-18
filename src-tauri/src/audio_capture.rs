@@ -3,7 +3,7 @@ use hound::{WavSpec, WavWriter};
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 
@@ -14,6 +14,8 @@ type SharedWriter = Arc<Mutex<Option<WavWriter<BufWriter<File>>>>>;
 struct RecordingHandle {
     running: Arc<AtomicBool>,
     writer: SharedWriter,
+    #[allow(dead_code)]
+    audio_level: Arc<AtomicU32>,
     thread: Option<std::thread::JoinHandle<()>>,
     path: PathBuf,
 }
@@ -43,6 +45,11 @@ struct RecordingTick {
 #[derive(Clone, serde::Serialize)]
 struct RecordingError {
     message: String,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct AudioLevel {
+    level: f32,
 }
 
 pub fn start_recording(state: &RecorderState, app: AppHandle) -> Result<(), String> {
@@ -80,10 +87,12 @@ pub fn start_recording(state: &RecorderState, app: AppHandle) -> Result<(), Stri
     let writer: SharedWriter = Arc::new(Mutex::new(Some(writer)));
 
     let running = Arc::new(AtomicBool::new(true));
+    let audio_level = Arc::new(AtomicU32::new(0u32));
 
     // Clone handles for the recording thread
     let writer_thread = writer.clone();
     let running_thread = running.clone();
+    let audio_level_thread = audio_level.clone();
     let app_err = app.clone();
     let num_channels = channels as usize;
 
@@ -120,6 +129,8 @@ pub fn start_recording(state: &RecorderState, app: AppHandle) -> Result<(), Stri
         let stream_config: cpal::StreamConfig = config.into();
         let writer_cb = writer_thread.clone();
         let running_cb = running_thread.clone();
+        let audio_level_f32 = audio_level_thread.clone();
+        let audio_level_i16 = audio_level_thread.clone();
         let app_err2 = app_err.clone();
 
         let err_fn = move |err: cpal::StreamError| {
@@ -152,6 +163,18 @@ pub fn start_recording(state: &RecorderState, app: AppHandle) -> Result<(), Stri
                             }
                         }
                     }
+                    // Compute RMS for audio level visualization
+                    let frame_count = data.len() / num_channels;
+                    if frame_count > 0 {
+                        let sum_sq: f32 = data.chunks(num_channels)
+                            .map(|f| {
+                                let m: f32 = f.iter().sum::<f32>() / num_channels as f32;
+                                m * m
+                            })
+                            .sum();
+                        let rms = (sum_sq / frame_count as f32).sqrt();
+                        audio_level_f32.store(rms.to_bits(), Ordering::Relaxed);
+                    }
                 },
                 err_fn,
                 None,
@@ -172,6 +195,18 @@ pub fn start_recording(state: &RecorderState, app: AppHandle) -> Result<(), Stri
                                 }
                             }
                         }
+                    }
+                    // Compute RMS for audio level visualization
+                    let frame_count = data.len() / num_channels;
+                    if frame_count > 0 {
+                        let sum_sq: f32 = data.chunks(num_channels)
+                            .map(|f| {
+                                let m: f32 = f.iter().map(|&s| s as f32 / 32768.0).sum::<f32>() / num_channels as f32;
+                                m * m
+                            })
+                            .sum();
+                        let rms = (sum_sq / frame_count as f32).sqrt();
+                        audio_level_i16.store(rms.to_bits(), Ordering::Relaxed);
                     }
                 },
                 err_fn,
@@ -235,9 +270,26 @@ pub fn start_recording(state: &RecorderState, app: AppHandle) -> Result<(), Stri
         }
     });
 
+    // Spawn async audio level emitter (~20 fps)
+    let running_level = running.clone();
+    let audio_level_emit = audio_level.clone();
+    let app_level = app.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_millis(50));
+        loop {
+            interval.tick().await;
+            if !running_level.load(Ordering::Relaxed) {
+                break;
+            }
+            let level = f32::from_bits(audio_level_emit.load(Ordering::Relaxed));
+            let _ = app_level.emit("recording-level", AudioLevel { level });
+        }
+    });
+
     *guard = Some(RecordingHandle {
         running,
         writer,
+        audio_level,
         thread: Some(thread),
         path,
     });
