@@ -56,6 +56,34 @@ class TranscriptionResult:
     audio_duration: float
 
 
+def _repair_broken_symlinks(directory: Path) -> int:
+    """Replace broken symlinks in directory with copies from blobs/.
+
+    Returns the number of repaired symlinks.
+    """
+    import shutil
+
+    repaired = 0
+    blobs_dir = directory.parent.parent / "blobs"
+    if not blobs_dir.is_dir():
+        return 0
+
+    for p in directory.rglob("*"):
+        if p.is_symlink() and not p.exists():
+            # Broken symlink — try to find the target in blobs/
+            target = os.readlink(p)
+            target_name = Path(target).name
+            blob_file = blobs_dir / target_name
+            if blob_file.is_file():
+                logger.info("Reparerar bruten symlink: %s -> %s", p, blob_file)
+                p.unlink()
+                shutil.copy2(blob_file, p)
+                repaired += 1
+            else:
+                logger.warning("Kunde inte reparera bruten symlink: %s (blob %s saknas)", p, target_name)
+    return repaired
+
+
 def _resolve_model_path(model_path: Path | str) -> Path | str:
     """
     Resolva HF-modell-ID till lokal snapshot-katalog om HF_HUB_CACHE är satt.
@@ -75,6 +103,14 @@ def _resolve_model_path(model_path: Path | str) -> Path | str:
     hf_cache = os.environ.get("HF_HUB_CACHE")
     if not hf_cache:
         return model_path
+
+    # Diagnostisk loggning för felsökning i bundlade miljöer
+    logger.debug(
+        "HF miljövariabler: HF_HUB_CACHE=%s, HF_HOME=%s, HF_HUB_OFFLINE=%s",
+        hf_cache,
+        os.environ.get("HF_HOME", "<ej satt>"),
+        os.environ.get("HF_HUB_OFFLINE", "<ej satt>"),
+    )
 
     # Konvertera HF modell-ID till cache-katalognamn: "KBLab/kb-whisper-small" → "models--KBLab--kb-whisper-small"
     model_id = str(model_path)
@@ -106,8 +142,17 @@ def _resolve_model_path(model_path: Path | str) -> Path | str:
         logger.debug("Snapshot-katalog finns inte: %s", snapshot_dir)
         return model_path
 
+    model_bin = snapshot_dir / "model.bin"
+
+    # Detect broken symlinks (symlink exists but target is missing)
+    if model_bin.is_symlink() and not model_bin.exists():
+        logger.warning("model.bin är en bruten symlink i: %s", snapshot_dir)
+        repaired = _repair_broken_symlinks(snapshot_dir)
+        if repaired > 0:
+            logger.info("Reparerade %d brutna symlinks i snapshot-katalogen", repaired)
+
     # Verifiera att model.bin finns (CTranslate2-modellens huvudfil)
-    if not (snapshot_dir / "model.bin").is_file():
+    if not model_bin.is_file():
         logger.debug("model.bin saknas i snapshot: %s", snapshot_dir)
         return model_path
 

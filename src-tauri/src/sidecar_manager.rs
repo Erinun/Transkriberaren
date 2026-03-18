@@ -123,6 +123,20 @@ impl SidecarManager {
         };
 
         cmd.env("PYTHONIOENCODING", "utf-8");
+
+        // Belt-and-suspenders: set HF env vars from Rust side for bundled exe.
+        // Redundant with sidecar_entry.py but protects against cases where
+        // sys.executable resolves differently.
+        if let Some(ref exe) = use_bundled {
+            let models_dir = exe.parent().unwrap().join("models");
+            if models_dir.is_dir() {
+                log::info!("Sätter HF env vars: models_dir={}", models_dir.display());
+                cmd.env("HF_HOME", &models_dir);
+                cmd.env("HF_HUB_CACHE", models_dir.join("hub"));
+                cmd.env("HF_HUB_OFFLINE", "1");
+            }
+        }
+
         cmd.stdin(std::process::Stdio::piped());
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());

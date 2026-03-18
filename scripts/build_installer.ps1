@@ -69,7 +69,14 @@ if (-not (Test-Path $modelsSource)) {
 if (Test-Path $modelsDest) {
     Remove-Item -Recurse -Force $modelsDest
 }
-Copy-Item -Recurse $modelsSource $modelsDest
+# Use robocopy instead of Copy-Item to handle symlinks correctly.
+# robocopy exit codes 0-7 are success.
+robocopy $modelsSource $modelsDest /E /DCOPY:DAT /COPY:DAT /NFL /NDL /NJH /NJS
+if ($LASTEXITCODE -ge 8) {
+    Write-Host "  robocopy misslyckades (exit code $LASTEXITCODE)!" -ForegroundColor Red
+    exit 1
+}
+$LASTEXITCODE = 0
 Write-Host "  OK" -ForegroundColor Green
 Write-Host ""
 
@@ -80,7 +87,13 @@ $sidecarDest = Join-Path $ProjectRoot "src-tauri\sidecar"
 if (Test-Path $sidecarDest) {
     Remove-Item -Recurse -Force $sidecarDest
 }
-Copy-Item -Recurse (Join-Path $ProjectRoot "dist\motesskribent-sidecar") $sidecarDest
+$sidecarSource = Join-Path $ProjectRoot "dist\motesskribent-sidecar"
+robocopy $sidecarSource $sidecarDest /E /DCOPY:DAT /COPY:DAT /NFL /NDL /NJH /NJS
+if ($LASTEXITCODE -ge 8) {
+    Write-Host "  robocopy misslyckades (exit code $LASTEXITCODE)!" -ForegroundColor Red
+    exit 1
+}
+$LASTEXITCODE = 0
 Write-Host "  OK" -ForegroundColor Green
 Write-Host ""
 

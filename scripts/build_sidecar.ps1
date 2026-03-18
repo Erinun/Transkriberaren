@@ -37,7 +37,17 @@ if (-not $SkipModels) {
     if (Test-Path $modelsDest) {
         Remove-Item -Recurse -Force $modelsDest
     }
-    Copy-Item -Recurse $modelsSource $modelsDest
+    # Use robocopy instead of Copy-Item to handle symlinks correctly.
+    # robocopy /E copies subdirectories including empty ones,
+    # /DCOPY:DAT copies directory timestamps,
+    # /COPY:DAT copies file Data, Attributes, Timestamps.
+    # robocopy exit codes 0-7 are success (bits: 1=files copied, 2=extra files, 4=mismatches).
+    robocopy $modelsSource $modelsDest /E /DCOPY:DAT /COPY:DAT /NFL /NDL /NJH /NJS
+    if ($LASTEXITCODE -ge 8) {
+        Write-Host "  robocopy misslyckades (exit code $LASTEXITCODE)!" -ForegroundColor Red
+        exit 1
+    }
+    $LASTEXITCODE = 0  # Reset since robocopy uses non-zero for success
     Write-Host "  OK" -ForegroundColor Green
 } else {
     Write-Host "[2/3] Hoppar över modellkopiering (--SkipModels)" -ForegroundColor Yellow
@@ -50,7 +60,13 @@ $sidecarDest = Join-Path $ProjectRoot "src-tauri\sidecar"
 if (Test-Path $sidecarDest) {
     Remove-Item -Recurse -Force $sidecarDest
 }
-Copy-Item -Recurse (Join-Path $ProjectRoot "dist\motesskribent-sidecar") $sidecarDest
+$sidecarSource = Join-Path $ProjectRoot "dist\motesskribent-sidecar"
+robocopy $sidecarSource $sidecarDest /E /DCOPY:DAT /COPY:DAT /NFL /NDL /NJH /NJS
+if ($LASTEXITCODE -ge 8) {
+    Write-Host "  robocopy misslyckades (exit code $LASTEXITCODE)!" -ForegroundColor Red
+    exit 1
+}
+$LASTEXITCODE = 0
 Write-Host "  OK" -ForegroundColor Green
 
 Write-Host ""
