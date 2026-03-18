@@ -1,6 +1,7 @@
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::time::Instant;
 use tauri::{AppHandle, Emitter};
 
 const OLLAMA_BASE: &str = "http://localhost:11434";
@@ -16,6 +17,7 @@ pub struct OllamaEvent {
     pub request_id: String,
     #[serde(rename = "type")]
     pub event_type: String,
+    pub seq: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -81,6 +83,12 @@ pub async fn generate_streaming(
         "model": model,
         "prompt": prompt,
         "stream": true,
+        "options": {
+            "num_ctx": 4096,
+            "num_predict": 2048,
+            "temperature": 0.7,
+            "repeat_penalty": 1.1,
+        },
     });
 
     let resp = client
@@ -96,6 +104,10 @@ pub async fn generate_streaming(
 
     let mut stream = resp.bytes_stream();
     let mut full_text = String::new();
+    let mut seq: u64 = 0;
+    let mut pending_tokens = String::new();
+    let mut last_emit = Instant::now();
+    const BATCH_INTERVAL_MS: u128 = 80;
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("Strömningsfel: {}", e))?;
@@ -109,24 +121,50 @@ pub async fn generate_streaming(
             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(line) {
                 if let Some(token) = parsed["response"].as_str() {
                     full_text.push_str(token);
-                    let _ = app.emit(
-                        "ollama-event",
-                        OllamaEvent {
-                            request_id: request_id.to_string(),
-                            event_type: "token".to_string(),
-                            token: Some(token.to_string()),
-                            done: None,
-                            error: None,
-                            full_text: None,
-                        },
-                    );
+                    pending_tokens.push_str(token);
+
+                    // Batch token events: emit at most every ~80ms
+                    if last_emit.elapsed().as_millis() >= BATCH_INTERVAL_MS {
+                        seq += 1;
+                        let _ = app.emit(
+                            "ollama-event",
+                            OllamaEvent {
+                                request_id: request_id.to_string(),
+                                event_type: "token".to_string(),
+                                seq,
+                                token: Some(std::mem::take(&mut pending_tokens)),
+                                done: None,
+                                error: None,
+                                full_text: None,
+                            },
+                        );
+                        last_emit = Instant::now();
+                    }
                 }
                 if parsed["done"].as_bool() == Some(true) {
+                    // Flush any remaining pending tokens
+                    if !pending_tokens.is_empty() {
+                        seq += 1;
+                        let _ = app.emit(
+                            "ollama-event",
+                            OllamaEvent {
+                                request_id: request_id.to_string(),
+                                event_type: "token".to_string(),
+                                seq,
+                                token: Some(std::mem::take(&mut pending_tokens)),
+                                done: None,
+                                error: None,
+                                full_text: None,
+                            },
+                        );
+                    }
+                    seq += 1;
                     let _ = app.emit(
                         "ollama-event",
                         OllamaEvent {
                             request_id: request_id.to_string(),
                             event_type: "done".to_string(),
+                            seq,
                             token: None,
                             done: Some(true),
                             error: None,

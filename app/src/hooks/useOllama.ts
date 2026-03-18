@@ -19,6 +19,7 @@ export interface OllamaStatus {
 interface OllamaEvent {
   request_id: string;
   type: string;
+  seq: number;
   token?: string;
   done?: boolean;
   error?: string;
@@ -90,6 +91,9 @@ export function useOllama(status: OllamaStatus) {
   const [streamedText, setStreamedText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef<string | null>(null);
+  const lastSeqRef = useRef<number>(0);
+  const textRef = useRef("");
+  const rafRef = useRef<number>(0);
 
   // Listen for streaming events
   useEffect(() => {
@@ -99,10 +103,24 @@ export function useOllama(status: OllamaStatus) {
     listen<OllamaEvent>("ollama-event", (event) => {
       const data = event.payload;
       if (data.request_id !== requestIdRef.current) return;
+      if (data.seq <= lastSeqRef.current) return;
+      lastSeqRef.current = data.seq;
 
       if (data.type === "token" && data.token) {
-        setStreamedText((prev) => prev + data.token);
+        textRef.current += data.token;
+        if (!rafRef.current) {
+          rafRef.current = requestAnimationFrame(() => {
+            setStreamedText(textRef.current);
+            rafRef.current = 0;
+          });
+        }
       } else if (data.type === "done") {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+        if (data.full_text) {
+          textRef.current = data.full_text;
+          setStreamedText(data.full_text);
+        }
         setGenerating(false);
       } else if (data.type === "error") {
         setError(data.error ?? "Okant fel");
@@ -112,7 +130,12 @@ export function useOllama(status: OllamaStatus) {
       if (cancelled) fn(); else unlisten = fn;
     });
 
-    return () => { cancelled = true; unlisten?.(); };
+    return () => {
+      cancelled = true;
+      unlisten?.();
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    };
   }, []);
 
   const generate = useCallback(
@@ -123,6 +146,10 @@ export function useOllama(status: OllamaStatus) {
       }
       const rid = crypto.randomUUID();
       requestIdRef.current = rid;
+      lastSeqRef.current = 0;
+      textRef.current = "";
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
       setStreamedText("");
       setError(null);
       setGenerating(true);
