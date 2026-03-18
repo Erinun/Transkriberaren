@@ -95,6 +95,7 @@ export default function App() {
     let unlisten: UnlistenFn | null = null;
     let cancelled = false;
     listen<string>("sidecar-status", (event) => {
+      if (cancelled) return;
       setSidecarStatus(event.payload as SidecarStatus);
     }).then((fn) => {
       if (cancelled) fn(); else unlisten = fn;
@@ -107,6 +108,7 @@ export default function App() {
     let unlisten: UnlistenFn | null = null;
     let cancelled = false;
     listen<boolean>("diarization-status", (event) => {
+      if (cancelled) return;
       setDiarizationAvailable(event.payload);
     }).then((fn) => {
       if (cancelled) fn(); else unlisten = fn;

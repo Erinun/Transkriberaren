@@ -68,6 +68,7 @@ export function usePipeline() {
     let cancelled = false;
 
     listen<any>("pipeline-event", (event) => {
+      if (cancelled) return;
       const data = event.payload;
 
       if (data.type === "progress") {

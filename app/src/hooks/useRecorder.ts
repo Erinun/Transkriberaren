@@ -24,6 +24,7 @@ export function useRecorder() {
     let cancelled = false;
 
     listen<{ elapsed_seconds: number }>("recording-tick", (event) => {
+      if (cancelled) return;
       setState((s) => ({
         ...s,
         elapsedSeconds: event.payload.elapsed_seconds,
@@ -33,6 +34,7 @@ export function useRecorder() {
     });
 
     listen<{ message: string }>("recording-error", (event) => {
+      if (cancelled) return;
       setState((s) => ({
         ...s,
         status: "idle",

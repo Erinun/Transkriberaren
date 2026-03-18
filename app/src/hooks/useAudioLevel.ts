@@ -20,6 +20,7 @@ export function useAudioLevel(active: boolean): number[] {
     let cancelled = false;
 
     listen<{ level: number }>("recording-level", (event) => {
+      if (cancelled) return;
       const amplified = Math.min(event.payload.level * GAIN, 1.0);
       const raw = Math.sqrt(amplified);
       const buf = bufRef.current;

@@ -101,6 +101,7 @@ export function useOllama(status: OllamaStatus) {
     let cancelled = false;
 
     listen<OllamaEvent>("ollama-event", (event) => {
+      if (cancelled) return;
       const data = event.payload;
       if (data.request_id !== requestIdRef.current) return;
       if (data.seq <= lastSeqRef.current) return;
