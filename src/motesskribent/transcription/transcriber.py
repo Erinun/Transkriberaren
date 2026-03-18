@@ -56,6 +56,65 @@ class TranscriptionResult:
     audio_duration: float
 
 
+def _resolve_model_path(model_path: Path | str) -> Path | str:
+    """
+    Resolva HF-modell-ID till lokal snapshot-katalog om HF_HUB_CACHE är satt.
+
+    I bundlade miljöer (PyInstaller) sätts HF_HUB_CACHE till en lokal katalog
+    med nerladdade modeller. WhisperModel klarar inte alltid HF Hub cache-lookup
+    i dessa miljöer, så vi resolvar till den faktiska snapshot-katalogen direkt.
+
+    Om model_path redan är en lokal katalog, eller om cache inte finns/är
+    ofullständig, returneras model_path oförändrad.
+    """
+    path = Path(model_path)
+    if path.is_dir():
+        logger.debug("Modellsökväg är redan en lokal katalog: %s", path)
+        return path
+
+    hf_cache = os.environ.get("HF_HUB_CACHE")
+    if not hf_cache:
+        return model_path
+
+    # Konvertera HF modell-ID till cache-katalognamn: "KBLab/kb-whisper-small" → "models--KBLab--kb-whisper-small"
+    model_id = str(model_path)
+    cache_dir_name = "models--" + model_id.replace("/", "--")
+    model_cache_dir = Path(hf_cache) / cache_dir_name
+
+    if not model_cache_dir.is_dir():
+        logger.debug("HF cache-katalog finns inte: %s", model_cache_dir)
+        return model_path
+
+    # Läs refs/main för att hitta snapshot-hash
+    refs_main = model_cache_dir / "refs" / "main"
+    if not refs_main.is_file():
+        logger.debug("refs/main finns inte i: %s", model_cache_dir)
+        return model_path
+
+    try:
+        snapshot_hash = refs_main.read_text(encoding="utf-8").strip()
+    except OSError as e:
+        logger.warning("Kunde inte läsa refs/main: %s", e)
+        return model_path
+
+    if not snapshot_hash:
+        logger.debug("refs/main är tom i: %s", model_cache_dir)
+        return model_path
+
+    snapshot_dir = model_cache_dir / "snapshots" / snapshot_hash
+    if not snapshot_dir.is_dir():
+        logger.debug("Snapshot-katalog finns inte: %s", snapshot_dir)
+        return model_path
+
+    # Verifiera att model.bin finns (CTranslate2-modellens huvudfil)
+    if not (snapshot_dir / "model.bin").is_file():
+        logger.debug("model.bin saknas i snapshot: %s", snapshot_dir)
+        return model_path
+
+    logger.info("Resolvade HF modell-ID '%s' till lokal sökväg: %s", model_id, snapshot_dir)
+    return snapshot_dir
+
+
 def _get_model(
     model_path: Path | str,
     compute_type: str = "int8",
@@ -78,12 +137,14 @@ def _get_model(
         logger.debug("Använder cachad modell: %s", key)
         return _cached_model
 
+    resolved = _resolve_model_path(model_path)
+
     logger.info(
         "Laddar modell: path=%s, compute_type=%s, cpu_threads=%d",
-        model_path, compute_type, cpu_threads,
+        resolved, compute_type, cpu_threads,
     )
     model = WhisperModel(
-        str(model_path),
+        str(resolved),
         device="cpu",
         compute_type=compute_type,
         cpu_threads=cpu_threads,
