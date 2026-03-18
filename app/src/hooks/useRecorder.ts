@@ -21,13 +21,16 @@ export function useRecorder() {
 
   useEffect(() => {
     const unlisteners: UnlistenFn[] = [];
+    let cancelled = false;
 
     listen<{ elapsed_seconds: number }>("recording-tick", (event) => {
       setState((s) => ({
         ...s,
         elapsedSeconds: event.payload.elapsed_seconds,
       }));
-    }).then((fn) => unlisteners.push(fn));
+    }).then((fn) => {
+      if (cancelled) fn(); else unlisteners.push(fn);
+    });
 
     listen<{ message: string }>("recording-error", (event) => {
       setState((s) => ({
@@ -35,11 +38,11 @@ export function useRecorder() {
         status: "idle",
         error: event.payload.message,
       }));
-    }).then((fn) => unlisteners.push(fn));
+    }).then((fn) => {
+      if (cancelled) fn(); else unlisteners.push(fn);
+    });
 
-    return () => {
-      unlisteners.forEach((fn) => fn());
-    };
+    return () => { cancelled = true; unlisteners.forEach((fn) => fn()); };
   }, []);
 
   const start = useCallback(async () => {

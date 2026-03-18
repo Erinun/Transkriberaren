@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import Logo from "./components/Logo";
 import DashboardView from "./components/DashboardView";
 import InfoModal from "./components/InfoModal";
@@ -92,22 +92,26 @@ export default function App() {
 
   // Listen for sidecar status events
   useEffect(() => {
-    const unlisten = listen<string>("sidecar-status", (event) => {
+    let unlisten: UnlistenFn | null = null;
+    let cancelled = false;
+    listen<string>("sidecar-status", (event) => {
       setSidecarStatus(event.payload as SidecarStatus);
+    }).then((fn) => {
+      if (cancelled) fn(); else unlisten = fn;
     });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
+    return () => { cancelled = true; unlisten?.(); };
   }, []);
 
   // Listen for diarization availability
   useEffect(() => {
-    const unlisten = listen<boolean>("diarization-status", (event) => {
+    let unlisten: UnlistenFn | null = null;
+    let cancelled = false;
+    listen<boolean>("diarization-status", (event) => {
       setDiarizationAvailable(event.payload);
+    }).then((fn) => {
+      if (cancelled) fn(); else unlisten = fn;
     });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
+    return () => { cancelled = true; unlisten?.(); };
   }, []);
 
   // Fetch default output dir once for recording settings

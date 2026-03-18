@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 const BAR_COUNT = 24;
 const GAIN = 8.0;
@@ -16,7 +16,10 @@ export function useAudioLevel(active: boolean): number[] {
       return;
     }
 
-    const unlisten = listen<{ level: number }>("recording-level", (event) => {
+    let unlisten: UnlistenFn | null = null;
+    let cancelled = false;
+
+    listen<{ level: number }>("recording-level", (event) => {
       const amplified = Math.min(event.payload.level * GAIN, 1.0);
       const raw = Math.sqrt(amplified);
       const buf = bufRef.current;
@@ -31,11 +34,11 @@ export function useAudioLevel(active: boolean): number[] {
       buf[BAR_COUNT - 1] = prev * SMOOTHING + raw * (1 - SMOOTHING);
 
       setLevels([...buf]);
+    }).then((fn) => {
+      if (cancelled) fn(); else unlisten = fn;
     });
 
-    return () => {
-      unlisten.then((fn) => fn());
-    };
+    return () => { cancelled = true; unlisten?.(); };
   }, [active]);
 
   return levels;

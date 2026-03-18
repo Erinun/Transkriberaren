@@ -94,6 +94,7 @@ export function useOllama(status: OllamaStatus) {
   // Listen for streaming events
   useEffect(() => {
     let unlisten: UnlistenFn | null = null;
+    let cancelled = false;
 
     listen<OllamaEvent>("ollama-event", (event) => {
       const data = event.payload;
@@ -108,12 +109,10 @@ export function useOllama(status: OllamaStatus) {
         setGenerating(false);
       }
     }).then((fn) => {
-      unlisten = fn;
+      if (cancelled) fn(); else unlisten = fn;
     });
 
-    return () => {
-      unlisten?.();
-    };
+    return () => { cancelled = true; unlisten?.(); };
   }, []);
 
   const generate = useCallback(

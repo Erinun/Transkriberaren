@@ -65,6 +65,7 @@ export function usePipeline() {
 
   useEffect(() => {
     let unlisten: UnlistenFn | null = null;
+    let cancelled = false;
 
     listen<any>("pipeline-event", (event) => {
       const data = event.payload;
@@ -101,12 +102,10 @@ export function usePipeline() {
         });
       }
     }).then((fn) => {
-      unlisten = fn;
+      if (cancelled) fn(); else unlisten = fn;
     });
 
-    return () => {
-      unlisten?.();
-    };
+    return () => { cancelled = true; unlisten?.(); };
   }, []);
 
   const start = useCallback(
