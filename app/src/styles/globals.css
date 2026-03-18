@@ -112,6 +112,13 @@ body {
   50% { opacity: 0.3; }
 }
 
+.audio-bar {
+  background: linear-gradient(to top, var(--color-primary), rgba(167, 139, 250, 0.9));
+  transition: height 80ms ease-out;
+  min-height: 2px;
+  box-shadow: 0 0 8px rgba(124, 58, 237, 0.3);
+}
+
 /* Range slider (ResultView font size) */
 .result-range {
   -webkit-appearance: none;
