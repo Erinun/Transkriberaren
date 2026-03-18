@@ -24,28 +24,57 @@ function formatTime(seconds: number): string {
   return m > 0 ? `${m} min ${s} sek` : `${s} sek`;
 }
 
+const SETTINGS_KEY = "motesskribent-settings";
+
+function loadDefaultSettings() {
+  const defaults = {
+    model: "KBLab/kb-whisper-small",
+    numSpeakers: "",
+    formats: { markdown: true, json: true, docx: false },
+    vadEnabled: true,
+    speedProfile: "balanced",
+  };
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (s.defaultModel) defaults.model = s.defaultModel;
+      if (s.defaultNumSpeakers) defaults.numSpeakers = s.defaultNumSpeakers;
+      if (s.defaultFormats) defaults.formats = { ...defaults.formats, ...s.defaultFormats };
+      if (typeof s.vadEnabled === "boolean") defaults.vadEnabled = s.vadEnabled;
+      if (s.defaultSpeedProfile) defaults.speedProfile = s.defaultSpeedProfile;
+    }
+  } catch {}
+  return defaults;
+}
+
 export default function TranscribeView({ onStart, history, onViewHistory, diarizationAvailable }: Props) {
+  const defaults = loadDefaultSettings();
   const [filePath, setFilePath] = useState<string | null>(null);
-  const [model, setModel] = useState("KBLab/kb-whisper-small");
-  const [numSpeakers, setNumSpeakers] = useState<string>("");
-  const [formats, setFormats] = useState({ markdown: true, json: true, docx: false });
+  const [model, setModel] = useState(defaults.model);
+  const [numSpeakers, setNumSpeakers] = useState<string>(defaults.numSpeakers);
+  const [formats, setFormats] = useState(defaults.formats);
   const [outputDir, setOutputDir] = useState("");
-  const [vadEnabled, setVadEnabled] = useState(true);
-  const [speedProfile, setSpeedProfile] = useState("balanced");
+  const [vadEnabled, setVadEnabled] = useState(defaults.vadEnabled);
+  const [speedProfile, setSpeedProfile] = useState(defaults.speedProfile);
 
   useEffect(() => {
     invoke<string>("get_default_output_dir").then(setOutputDir);
   }, []);
 
   const handlePickFile = async () => {
-    const selected = await open({
-      multiple: false,
-      filters: [
-        { name: "Ljud", extensions: ["wav", "mp3", "m4a", "flac", "ogg", "wma"] },
-      ],
-    });
-    if (selected) {
-      setFilePath(selected);
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [
+          { name: "Ljud", extensions: ["wav", "mp3", "m4a", "flac", "ogg", "wma"] },
+        ],
+      });
+      if (selected) {
+        setFilePath(selected);
+      }
+    } catch (err) {
+      console.error("Filväljaren misslyckades:", err);
     }
   };
 

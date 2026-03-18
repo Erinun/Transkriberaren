@@ -30,13 +30,15 @@ export function useHistory() {
   const [entries, setEntries] = useState<HistoryEntry[]>(loadEntries);
 
   const addEntry = useCallback(
-    (audioName: string, mdContent: string, summary: PipelineSummary) => {
+    (audioName: string, mdContent: string, summary: PipelineSummary, modelName?: string | null, wordCount?: number) => {
       const entry: HistoryEntry = {
         id: crypto.randomUUID(),
         audioName,
         date: new Date().toISOString(),
         mdContent,
         summary,
+        modelName,
+        wordCount,
       };
       setEntries((prev) => {
         const next = [entry, ...prev].slice(0, MAX_ENTRIES);

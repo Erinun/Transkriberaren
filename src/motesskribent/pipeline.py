@@ -224,7 +224,7 @@ def run_pipeline(
         "num_speakers": num_speakers,
         "processing_time": time.perf_counter() - pipeline_start,
         "model_name": str(config.model_path),
-        "version": "0.1.0",
+        "version": "0.2.0",
     }
 
     output_files: list[Path] = []

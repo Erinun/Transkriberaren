@@ -146,24 +146,16 @@ export default function App() {
     pipeline.start(filePath, finalSettings);
   };
 
-  // Auto-navigate when pipeline completes or errors
-  if (pipeline.status === "done" && activeView === "processing") {
-    setActiveView("result");
-  }
-  if (pipeline.status === "error" && activeView === "processing") {
-    setActiveView("result");
-  }
-
-  // Save to history when pipeline completes
-  if (
-    pipeline.status === "done" &&
-    pipeline.mdContent &&
-    pipeline.summary &&
-    !historySavedRef.current
-  ) {
-    historySavedRef.current = true;
-    history.addEntry(currentAudioName, pipeline.mdContent, pipeline.summary);
-  }
+  // Auto-navigate when pipeline completes or errors, and save to history
+  useEffect(() => {
+    if ((pipeline.status === "done" || pipeline.status === "error") && activeView === "processing") {
+      setActiveView("result");
+    }
+    if (pipeline.status === "done" && pipeline.mdContent && pipeline.summary && !historySavedRef.current) {
+      historySavedRef.current = true;
+      history.addEntry(currentAudioName, pipeline.mdContent, pipeline.summary, pipeline.modelName, pipeline.wordCount);
+    }
+  }, [pipeline.status, pipeline.mdContent, pipeline.summary, activeView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleViewHistory = (entry: HistoryEntry) => {
     setViewingHistory(entry);
