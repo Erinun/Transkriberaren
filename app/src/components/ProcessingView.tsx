@@ -24,7 +24,7 @@ export default function ProcessingView({ stage, percent, message }: Props) {
             style={{
               border: "4px solid rgba(255,255,255,0.06)",
               borderTopColor: "var(--color-primary)",
-              boxShadow: "0 0 20px rgba(124, 58, 237, 0.2)",
+              boxShadow: "0 0 20px rgba(37, 99, 235, 0.2)",
             }}
           />
         </div>
@@ -41,8 +41,8 @@ export default function ProcessingView({ stage, percent, message }: Props) {
             className="h-full rounded-full transition-all duration-500 ease-out"
             style={{
               width: `${percent}%`,
-              background: "linear-gradient(90deg, #7c3aed, #a78bfa)",
-              boxShadow: "0 0 12px rgba(124, 58, 237, 0.4)",
+              background: "linear-gradient(90deg, #2563eb, #60a5fa)",
+              boxShadow: "0 0 12px rgba(37, 99, 235, 0.4)",
             }}
           />
         </div>

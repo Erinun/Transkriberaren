@@ -288,7 +288,7 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
       <div className="flex items-center gap-3">
         <button
           onClick={handleSave}
-          className="px-4 py-2 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-sm transition-all hover:shadow-[0_0_20px_rgba(124,58,237,0.25)]"
+          className="px-4 py-2 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-sm transition-all hover:shadow-[0_0_20px_rgba(37,99,235,0.25)]"
         >
           Spara
         </button>

@@ -153,7 +153,7 @@ export default function ResultView({
       "#f59e0b",
       "#06b6d4",
       "#ec4899",
-      "#8b5cf6",
+      "#a855f7",
     ];
     const map = new Map<string, string>();
     let idx = 0;
@@ -440,7 +440,7 @@ export default function ResultView({
                 <button
                   onClick={handleSaveAs}
                   disabled={saving}
-                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] text-xs transition-all disabled:opacity-50 hover:shadow-[0_0_20px_rgba(124,58,237,0.25)]"
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] text-xs transition-all disabled:opacity-50 hover:shadow-[0_0_20px_rgba(37,99,235,0.25)]"
                 >
                   {saving ? "Sparar..." : "Spara som\u2026"}
                 </button>
@@ -650,7 +650,7 @@ export default function ResultView({
                     !mdContent ||
                     (selectedTemplate.isCustom && !customPrompt.trim())
                   }
-                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] text-xs transition-all disabled:opacity-50 hover:shadow-[0_0_20px_rgba(124,58,237,0.25)] flex items-center justify-center gap-2"
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] text-xs transition-all disabled:opacity-50 hover:shadow-[0_0_20px_rgba(37,99,235,0.25)] flex items-center justify-center gap-2"
                 >
                   {ollama.generating ? (
                     <>

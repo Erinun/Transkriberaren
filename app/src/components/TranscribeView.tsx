@@ -204,7 +204,7 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
         disabled={!filePath}
         className={`w-full py-3 rounded-lg font-medium text-sm transition-all ${
           filePath
-            ? "bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white hover:glow-primary hover:shadow-[0_0_20px_rgba(124,58,237,0.25)]"
+            ? "bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white hover:glow-primary hover:shadow-[0_0_20px_rgba(37,99,235,0.25)]"
             : "glass text-[var(--color-text-muted)] cursor-not-allowed"
         }`}
       >

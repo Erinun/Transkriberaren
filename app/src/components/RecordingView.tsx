@@ -1,4 +1,6 @@
 import { useRecorder } from "../hooks/useRecorder";
+import { useAudioLevel } from "../hooks/useAudioLevel";
+import AudioLevelBars from "./AudioLevelBars";
 import type { PipelineSettings } from "../hooks/usePipeline";
 
 interface Props {
@@ -14,6 +16,7 @@ function formatTime(seconds: number): string {
 
 export default function RecordingView({ onRecordingComplete, settings }: Props) {
   const recorder = useRecorder();
+  const levels = useAudioLevel(recorder.status === "recording");
 
   const handleStart = async () => {
     await recorder.start();
@@ -73,9 +76,7 @@ export default function RecordingView({ onRecordingComplete, settings }: Props) 
             <p className="text-4xl font-mono font-semibold tabular-nums">
               {formatTime(recorder.elapsedSeconds)}
             </p>
-            <p className="text-sm text-[var(--color-text-muted)]">
-              Mikrofon: aktiv
-            </p>
+            <AudioLevelBars levels={levels} />
           </div>
 
           {/* Stop button */}
@@ -100,7 +101,7 @@ export default function RecordingView({ onRecordingComplete, settings }: Props) 
             className={`px-6 py-3 rounded-lg font-medium text-sm transition-all ${
               recorder.status === "stopping"
                 ? "glass text-[var(--color-text-muted)] cursor-not-allowed"
-                : "bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white hover:shadow-[0_0_20px_rgba(124,58,237,0.25)]"
+                : "bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white hover:shadow-[0_0_20px_rgba(37,99,235,0.25)]"
             }`}
           >
             {recorder.status === "stopping" ? "Stoppar..." : "Starta inspelning"}

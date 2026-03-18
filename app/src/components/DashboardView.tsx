@@ -80,7 +80,7 @@ export default function DashboardView({ onNavigate, sidecarReady, onInfoClick, o
           <button
             key={card.id}
             onClick={() => onNavigate(card.id)}
-            className="glass rounded-xl p-6 flex flex-col items-center gap-3 w-48 text-center transition-all duration-200 hover:scale-[1.02] hover:border-[rgba(255,255,255,0.18)] hover:shadow-[0_0_24px_rgba(124,58,237,0.15)]"
+            className="glass rounded-xl p-6 flex flex-col items-center gap-3 w-48 text-center transition-all duration-200 hover:scale-[1.02] hover:border-[rgba(255,255,255,0.18)] hover:shadow-[0_0_24px_rgba(37,99,235,0.15)]"
           >
             <div className="text-[var(--color-primary)]">{card.icon}</div>
             <h3 className="text-sm font-semibold">{card.title}</h3>
