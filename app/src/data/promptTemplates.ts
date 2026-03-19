@@ -18,7 +18,7 @@ export const PROMPT_TEMPLATES: PromptTemplate[] = [
 TRANSKRIBERING:
 {transcription}
 
-Skriv en koncis sammanfattning på svenska. Svara i ren text utan markdown-formatering (inga asterisker, rubriktecken eller andra markeringar).`,
+Skriv en koncis sammanfattning på svenska. Använd markdown-formatering med rubriker (##), fetstil för viktiga punkter, och punktlistor där det passar.`,
   },
   {
     id: "action-items",
@@ -31,10 +31,10 @@ Skriv en koncis sammanfattning på svenska. Svara i ren text utan markdown-forma
 TRANSKRIBERING:
 {transcription}
 
-Lista alla åtgärdspunkter och beslut som en numrerad lista på svenska. Formatera som:
-1. [Åtgärd] - Ansvarig: [Person] (om det framgår)
-
-Svara i ren text utan markdown-formatering (inga asterisker, rubriktecken eller andra markeringar).`,
+Lista alla åtgärdspunkter och beslut på svenska. Använd markdown-formatering:
+- Numrerad lista för åtgärdspunkter
+- **Fetstil** för ansvarig person
+- Gruppera efter ämne med rubriker (##) om det finns flera ämnen.`,
   },
   {
     id: "minutes",
@@ -52,7 +52,7 @@ Svara i ren text utan markdown-formatering (inga asterisker, rubriktecken eller 
 TRANSKRIBERING:
 {transcription}
 
-Skriv ett formellt mötesprotokoll på svenska. Svara i ren text utan markdown-formatering (inga asterisker, rubriktecken eller andra markeringar).`,
+Skriv ett formellt mötesprotokoll på svenska. Använd markdown-formatering med rubriker (##) för varje avsnitt, **fetstil** för namn och beslut, och punktlistor.`,
   },
   {
     id: "cleanup",
@@ -70,7 +70,7 @@ Skriv ett formellt mötesprotokoll på svenska. Svara i ren text utan markdown-f
 TRANSKRIBERING:
 {transcription}
 
-Skriv den renskrivna texten på svenska. Behåll talarmarkeringarna. Svara i ren text utan markdown-formatering (inga asterisker, rubriktecken eller andra markeringar).`,
+Skriv den renskrivna texten på svenska. Behåll talarmarkeringarna med **fetstil** för talarnamn.`,
   },
   {
     id: "custom",
@@ -112,7 +112,7 @@ export function buildPrompt(
 
   if (template.isCustom) {
     const base = customPrompt ?? "";
-    return `${base}\n\nSvara i ren text utan markdown-formatering (inga asterisker, rubriktecken eller andra markeringar).\n\nTRANSKRIBERING:\n${stripped}`;
+    return `${base}\n\nFormatera svaret med markdown (rubriker, fetstil, listor).\n\nTRANSKRIBERING:\n${stripped}`;
   }
   let prompt = template.template;
   prompt = prompt.replace("{transcription}", stripped);
