@@ -205,7 +205,7 @@ def to_docx(
         run.font.size = Pt(11)
 
         text_para = doc.add_paragraph(seg.text)
-        text_para.style.font.size = Pt(11)
+        text_para.runs[0].font.size = Pt(11)
 
     doc.add_paragraph("_" * 50)
 
