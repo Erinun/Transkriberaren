@@ -113,6 +113,16 @@ body {
   50% { opacity: 0.3; }
 }
 
+.animate-saved-flash {
+  animation: savedFlash 1.5s ease-out forwards;
+}
+
+@keyframes savedFlash {
+  0% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 .audio-bar {
   background: linear-gradient(to top, var(--color-primary), rgba(96, 165, 250, 0.9));
   transition: height 80ms ease-out;

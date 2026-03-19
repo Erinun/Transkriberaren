@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { OllamaStatus } from "../hooks/useOllama";
 import { usePromptTemplates } from "../hooks/usePromptTemplates";
@@ -39,8 +39,19 @@ function formatFileSize(bytes: number): string {
 
 export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaStatus }) {
   const [settings, setSettings] = useState<Settings>(loadSettings);
-  const [saved, setSaved] = useState(false);
+  const [showSaved, setShowSaved] = useState(false);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [checking, setChecking] = useState(false);
+
+  const flashSaved = () => {
+    setShowSaved(true);
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    savedTimerRef.current = setTimeout(() => setShowSaved(false), 1500);
+  };
+
+  useEffect(() => {
+    return () => { if (savedTimerRef.current) clearTimeout(savedTimerRef.current); };
+  }, []);
 
   // Prompt template management
   const promptHook = usePromptTemplates();
@@ -52,13 +63,12 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
   const [creatingNew, setCreatingNew] = useState(false);
 
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) => {
-    setSettings((s) => ({ ...s, [key]: value }));
-    setSaved(false);
-  };
-
-  const handleSave = () => {
-    saveSettings(settings);
-    setSaved(true);
+    setSettings((prev) => {
+      const next = { ...prev, [key]: value };
+      saveSettings(next);
+      return next;
+    });
+    flashSaved();
   };
 
   const startEdit = (id: string) => {
@@ -107,7 +117,14 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
 
   return (
     <div className="max-w-xl mx-auto space-y-6 animate-fade-in">
-      <h2 className="text-2xl font-bold">Inställningar</h2>
+      <div className="flex items-center gap-3">
+        <h2 className="text-2xl font-bold">Inställningar</h2>
+        {showSaved && (
+          <span className="text-sm text-[var(--color-success)] animate-saved-flash">
+            Sparad
+          </span>
+        )}
+      </div>
 
       {/* Default model */}
       <div className="space-y-2">
@@ -307,16 +324,6 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
         {ollamaStatus.available === true && (
           <OllamaParametersSection />
         )}
-      </div>
-
-      <div className="flex items-center gap-3">
-        <button
-          onClick={handleSave}
-          className="px-4 py-2 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-sm transition-all hover:shadow-[0_0_20px_rgba(37,99,235,0.25)]"
-        >
-          Spara
-        </button>
-        {saved && <span className="text-sm text-[var(--color-success)]">Sparat!</span>}
       </div>
 
       {/* Prompt templates */}
