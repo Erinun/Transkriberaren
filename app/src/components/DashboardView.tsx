@@ -69,8 +69,10 @@ export default function DashboardView({ onNavigate, sidecarReady, onInfoClick, o
       <div className="flex flex-col items-center gap-3 mb-10">
         <Logo size={64} />
         <h1 className="text-3xl font-bold tracking-tight">MötesSkribent</h1>
-        <p className="text-[var(--color-text-muted)] text-sm">
-          Lokal mötestranskribering
+        <p className="text-[var(--color-text-muted)] text-sm max-w-lg text-center leading-relaxed mt-1">
+          Din lokala assistent för mötestranskribering.
+          Omvandla inspelningar till tydliga mötesprotokoll med automatisk talaridentifiering.
+          All bearbetning sker lokalt på din dator — ingen data lämnar din maskin.
         </p>
       </div>
 
