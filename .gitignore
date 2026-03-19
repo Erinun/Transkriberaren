@@ -15,7 +15,8 @@ ENV/
 
 # Project-specific
 models/
-output/
+/output/
+!src/motesskribent/output/
 
 # IDE
 .vscode/
