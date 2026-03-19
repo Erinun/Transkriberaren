@@ -21,6 +21,8 @@ export interface OllamaStatus {
   selectModel: (name: string) => void;
   refreshModels: () => Promise<void>;
   checkHealth: () => Promise<void>;
+  ollamaUrl: string;
+  setOllamaUrl: (url: string) => void;
 }
 
 interface OllamaEvent {
@@ -34,6 +36,8 @@ interface OllamaEvent {
 }
 
 const STORAGE_KEY = "motesskribent-ollama-model";
+const URL_STORAGE_KEY = "motesskribent-ollama-url";
+const DEFAULT_OLLAMA_URL = "http://localhost:11434";
 
 /**
  * Connection-level state: availability, models, selected model.
@@ -49,6 +53,18 @@ export function useOllamaStatus(): OllamaStatus {
       return null;
     }
   });
+  const [ollamaUrl, setOllamaUrlState] = useState<string>(() => {
+    try {
+      return localStorage.getItem(URL_STORAGE_KEY) || DEFAULT_OLLAMA_URL;
+    } catch {
+      return DEFAULT_OLLAMA_URL;
+    }
+  });
+
+  const setOllamaUrl = useCallback((url: string) => {
+    setOllamaUrlState(url);
+    localStorage.setItem(URL_STORAGE_KEY, url);
+  }, []);
 
   const selectModel = useCallback((name: string) => {
     setSelectedModelState(name);
@@ -56,12 +72,13 @@ export function useOllamaStatus(): OllamaStatus {
   }, []);
 
   const checkHealth = useCallback(async () => {
+    const baseUrl = ollamaUrl.trim() || DEFAULT_OLLAMA_URL;
     try {
-      const ok = await invoke<boolean>("ollama_check_health");
+      const ok = await invoke<boolean>("ollama_check_health", { baseUrl });
       setAvailable(ok);
       if (ok) {
         try {
-          const m = await invoke<OllamaModel[]>("ollama_list_models");
+          const m = await invoke<OllamaModel[]>("ollama_list_models", { baseUrl });
           setModels(m);
           // Auto-select first model if none saved
           if (!localStorage.getItem(STORAGE_KEY) && m.length > 0) {
@@ -73,7 +90,7 @@ export function useOllamaStatus(): OllamaStatus {
     } catch {
       setAvailable(false);
     }
-  }, []);
+  }, [ollamaUrl]);
 
   const refreshModels = useCallback(async () => {
     await checkHealth();
@@ -86,6 +103,8 @@ export function useOllamaStatus(): OllamaStatus {
     selectModel,
     refreshModels,
     checkHealth,
+    ollamaUrl,
+    setOllamaUrl,
   };
 }
 
@@ -163,18 +182,20 @@ export function useOllama(status: OllamaStatus) {
       setGenerating(true);
 
       try {
+        const baseUrl = status.ollamaUrl.trim() || DEFAULT_OLLAMA_URL;
         await invoke("ollama_generate", {
           model: status.selectedModel,
           prompt,
           requestId: rid,
           options: options ?? null,
+          baseUrl,
         });
       } catch (err: any) {
         setError(typeof err === "string" ? err : err.message ?? "Okant fel");
         setGenerating(false);
       }
     },
-    [status.selectedModel],
+    [status.selectedModel, status.ollamaUrl],
   );
 
   const resetOutput = useCallback(() => {

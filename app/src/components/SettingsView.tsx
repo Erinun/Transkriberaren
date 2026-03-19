@@ -221,6 +221,21 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
       <div className="space-y-3 pt-4 border-t border-white/10">
         <h3 className="text-lg font-semibold">Ollama (lokal LLM)</h3>
 
+        {/* Server URL */}
+        <div className="space-y-1">
+          <label className="block text-xs text-[var(--color-text-muted)]">Server-URL</label>
+          <input
+            type="text"
+            value={ollamaStatus.ollamaUrl}
+            onChange={(e) => ollamaStatus.setOllamaUrl(e.target.value)}
+            placeholder="http://localhost:11434"
+            className="w-full px-3 py-2 rounded-lg glass-input text-sm"
+          />
+          <p className="text-[10px] text-[var(--color-text-muted)]">
+            Standard: http://localhost:11434. Ändra om Ollama körs på en annan dator eller port.
+          </p>
+        </div>
+
         {/* Connection status */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-sm">

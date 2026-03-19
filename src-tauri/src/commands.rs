@@ -99,13 +99,13 @@ pub async fn copy_file_to(source: String, destination: String) -> Result<(), Str
 }
 
 #[tauri::command]
-pub async fn ollama_check_health() -> bool {
-    crate::ollama::check_health().await
+pub async fn ollama_check_health(base_url: String) -> bool {
+    crate::ollama::check_health(&base_url).await
 }
 
 #[tauri::command]
-pub async fn ollama_list_models() -> Result<Vec<crate::ollama::OllamaModel>, String> {
-    crate::ollama::list_models().await
+pub async fn ollama_list_models(base_url: String) -> Result<Vec<crate::ollama::OllamaModel>, String> {
+    crate::ollama::list_models(&base_url).await
 }
 
 #[tauri::command]
@@ -115,8 +115,9 @@ pub async fn ollama_generate(
     prompt: String,
     request_id: String,
     options: Option<crate::ollama::OllamaOptions>,
+    base_url: String,
 ) -> Result<String, String> {
-    crate::ollama::generate_streaming(&app, &model, &prompt, &request_id, options).await
+    crate::ollama::generate_streaming(&app, &model, &prompt, &request_id, options, &base_url).await
 }
 
 #[tauri::command]

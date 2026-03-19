@@ -4,8 +4,6 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter};
 
-const OLLAMA_BASE: &str = "http://localhost:11434";
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OllamaModel {
     pub name: String,
@@ -36,22 +34,24 @@ pub struct OllamaEvent {
     pub full_text: Option<String>,
 }
 
-pub async fn check_health() -> bool {
+pub async fn check_health(base_url: &str) -> bool {
+    let url = base_url.trim_end_matches('/');
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(2))
         .build()
         .unwrap_or_default();
-    client.get(OLLAMA_BASE).send().await.is_ok()
+    client.get(url).send().await.is_ok()
 }
 
-pub async fn list_models() -> Result<Vec<OllamaModel>, String> {
+pub async fn list_models(base_url: &str) -> Result<Vec<OllamaModel>, String> {
+    let url = base_url.trim_end_matches('/');
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()
         .map_err(|e| format!("HTTP-klient kunde inte skapas: {}", e))?;
 
     let resp = client
-        .get(format!("{}/api/tags", OLLAMA_BASE))
+        .get(format!("{}/api/tags", url))
         .send()
         .await
         .map_err(|e| format!("Kunde inte ansluta till Ollama: {}", e))?;
@@ -82,6 +82,7 @@ pub async fn generate_streaming(
     prompt: &str,
     request_id: &str,
     options: Option<OllamaOptions>,
+    base_url: &str,
 ) -> Result<String, String> {
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(300))
@@ -107,8 +108,10 @@ pub async fn generate_streaming(
         },
     });
 
+    let url = base_url.trim_end_matches('/');
+
     let resp = client
-        .post(format!("{}/api/generate", OLLAMA_BASE))
+        .post(format!("{}/api/generate", url))
         .json(&body)
         .send()
         .await
