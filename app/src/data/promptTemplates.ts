@@ -18,7 +18,7 @@ export const PROMPT_TEMPLATES: PromptTemplate[] = [
 TRANSKRIBERING:
 {transcription}
 
-Skriv en koncis sammanfattning på svenska.`,
+Skriv en koncis sammanfattning på svenska. Svara i ren text utan markdown-formatering (inga asterisker, rubriktecken eller andra markeringar).`,
   },
   {
     id: "action-items",
@@ -32,7 +32,9 @@ TRANSKRIBERING:
 {transcription}
 
 Lista alla åtgärdspunkter och beslut som en numrerad lista på svenska. Formatera som:
-1. [Åtgärd] - Ansvarig: [Person] (om det framgår)`,
+1. [Åtgärd] - Ansvarig: [Person] (om det framgår)
+
+Svara i ren text utan markdown-formatering (inga asterisker, rubriktecken eller andra markeringar).`,
   },
   {
     id: "minutes",
@@ -50,7 +52,7 @@ Lista alla åtgärdspunkter och beslut som en numrerad lista på svenska. Format
 TRANSKRIBERING:
 {transcription}
 
-Skriv ett formellt mötesprotokoll på svenska.`,
+Skriv ett formellt mötesprotokoll på svenska. Svara i ren text utan markdown-formatering (inga asterisker, rubriktecken eller andra markeringar).`,
   },
   {
     id: "cleanup",
@@ -68,7 +70,7 @@ Skriv ett formellt mötesprotokoll på svenska.`,
 TRANSKRIBERING:
 {transcription}
 
-Skriv den renskrivna texten på svenska. Behåll talarmarkeringarna.`,
+Skriv den renskrivna texten på svenska. Behåll talarmarkeringarna. Svara i ren text utan markdown-formatering (inga asterisker, rubriktecken eller andra markeringar).`,
   },
   {
     id: "custom",
@@ -79,17 +81,41 @@ Skriv den renskrivna texten på svenska. Behåll talarmarkeringarna.`,
   },
 ];
 
+/**
+ * Strip markdown formatting from transcription before sending to LLM.
+ * Reduces token count by ~200-300 tokens per transcription.
+ */
+export function stripMarkdownForLLM(md: string): string {
+  let text = md;
+  // Remove "# Mötesprotokoll" header
+  text = text.replace(/^#\s+.+$/gm, "");
+  // Remove horizontal rules
+  text = text.replace(/^-{3,}$/gm, "");
+  // Remove bold markers (e.g. **Talare 1:**)
+  text = text.replace(/\*\*/g, "");
+  // Remove italic footer (e.g. *Genererat av...*)
+  text = text.replace(/^\*[^*]+\*$/gm, "");
+  // Remove trailing double spaces (markdown linebreak)
+  text = text.replace(/ {2,}$/gm, "");
+  // Collapse multiple blank lines to one
+  text = text.replace(/\n{3,}/g, "\n\n");
+  return text.trim();
+}
+
 export function buildPrompt(
   template: PromptTemplate,
   transcription: string,
   context: string,
   customPrompt?: string,
 ): string {
+  const stripped = stripMarkdownForLLM(transcription);
+
   if (template.isCustom) {
-    return `${customPrompt ?? ""}\n\nTRANSKRIBERING:\n${transcription}`;
+    const base = customPrompt ?? "";
+    return `${base}\n\nSvara i ren text utan markdown-formatering (inga asterisker, rubriktecken eller andra markeringar).\n\nTRANSKRIBERING:\n${stripped}`;
   }
   let prompt = template.template;
-  prompt = prompt.replace("{transcription}", transcription);
+  prompt = prompt.replace("{transcription}", stripped);
   prompt = prompt.replace(
     "{context}",
     context ? `EXTRA KONTEXT:\n${context}` : "",

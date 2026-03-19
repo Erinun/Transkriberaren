@@ -114,8 +114,9 @@ pub async fn ollama_generate(
     model: String,
     prompt: String,
     request_id: String,
+    options: Option<crate::ollama::OllamaOptions>,
 ) -> Result<String, String> {
-    crate::ollama::generate_streaming(&app, &model, &prompt, &request_id).await
+    crate::ollama::generate_streaming(&app, &model, &prompt, &request_id, options).await
 }
 
 #[tauri::command]

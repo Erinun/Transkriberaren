@@ -7,6 +7,13 @@ export interface OllamaModel {
   size: number;
 }
 
+export interface OllamaOptions {
+  temperature?: number;
+  num_ctx?: number;
+  num_predict?: number;
+  repeat_penalty?: number;
+}
+
 export interface OllamaStatus {
   available: boolean | null;
   models: OllamaModel[];
@@ -140,7 +147,7 @@ export function useOllama(status: OllamaStatus) {
   }, []);
 
   const generate = useCallback(
-    async (prompt: string) => {
+    async (prompt: string, options?: OllamaOptions) => {
       if (!status.selectedModel) {
         setError("Ingen modell vald");
         return;
@@ -160,6 +167,7 @@ export function useOllama(status: OllamaStatus) {
           model: status.selectedModel,
           prompt,
           requestId: rid,
+          options: options ?? null,
         });
       } catch (err: any) {
         setError(typeof err === "string" ? err : err.message ?? "Okant fel");

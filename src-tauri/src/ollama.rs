@@ -13,6 +13,14 @@ pub struct OllamaModel {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OllamaOptions {
+    pub temperature: Option<f64>,
+    pub num_ctx: Option<u32>,
+    pub num_predict: Option<u32>,
+    pub repeat_penalty: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OllamaEvent {
     pub request_id: String,
     #[serde(rename = "type")]
@@ -73,21 +81,29 @@ pub async fn generate_streaming(
     model: &str,
     prompt: &str,
     request_id: &str,
+    options: Option<OllamaOptions>,
 ) -> Result<String, String> {
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(300))
         .build()
         .map_err(|e| format!("HTTP-klient kunde inte skapas: {}", e))?;
 
+    let opts = options.unwrap_or(OllamaOptions {
+        temperature: None,
+        num_ctx: None,
+        num_predict: None,
+        repeat_penalty: None,
+    });
+
     let body = serde_json::json!({
         "model": model,
         "prompt": prompt,
         "stream": true,
         "options": {
-            "num_ctx": 4096,
-            "num_predict": 2048,
-            "temperature": 0.7,
-            "repeat_penalty": 1.1,
+            "num_ctx": opts.num_ctx.unwrap_or(4096),
+            "num_predict": opts.num_predict.unwrap_or(2048),
+            "temperature": opts.temperature.unwrap_or(0.3),
+            "repeat_penalty": opts.repeat_penalty.unwrap_or(1.1),
         },
     });
 

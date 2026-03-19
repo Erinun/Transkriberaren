@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
+import ReactMarkdown from "react-markdown";
 import type { TranscriptionSegment } from "../hooks/usePipeline";
-import { useOllama, type OllamaStatus } from "../hooks/useOllama";
+import { useOllama, type OllamaStatus, type OllamaOptions } from "../hooks/useOllama";
 import { usePromptTemplates } from "../hooks/usePromptTemplates";
 import {
   buildPrompt,
@@ -232,7 +233,13 @@ export default function ResultView({
       extraContext,
       selectedTemplate.isCustom ? customPrompt : undefined,
     );
-    ollama.generate(prompt);
+    // Read saved Ollama options from localStorage
+    let options: OllamaOptions | undefined;
+    try {
+      const raw = localStorage.getItem("motesskribent-ollama-options");
+      if (raw) options = JSON.parse(raw);
+    } catch {}
+    ollama.generate(prompt, options);
     setContentView("ollama");
   };
 
@@ -319,8 +326,8 @@ export default function ResultView({
                 )}
               </div>
               {ollama.streamedText ? (
-                <div className="prose prose-invert max-w-none leading-relaxed whitespace-pre-wrap">
-                  {ollama.streamedText}
+                <div className="prose prose-invert max-w-none leading-relaxed">
+                  <ReactMarkdown>{ollama.streamedText}</ReactMarkdown>
                 </div>
               ) : ollama.generating ? (
                 <p className="text-[var(--color-text-muted)] text-sm">
