@@ -1,19 +1,24 @@
 mod audio_capture;
 mod commands;
+mod meeting_detector;
 mod ollama;
 mod sidecar;
 mod sidecar_manager;
 
 use audio_capture::RecorderState;
-use commands::{copy_file_to, get_default_output_dir, list_audio_devices, ollama_check_health, ollama_generate, ollama_list_models, open_file, read_file_content, run_transcription, start_recording, stop_recording, write_text_to_file};
+use commands::{copy_file_to, get_default_output_dir, list_audio_devices, ollama_check_health, ollama_generate, ollama_list_models, open_file, read_file_content, run_transcription, set_meeting_detection, start_recording, stop_recording, write_text_to_file};
+use meeting_detector::MeetingDetector;
 use sidecar_manager::SidecarManager;
 use tauri::{Emitter, Manager};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(
             tauri_plugin_log::Builder::new()
                 .max_file_size(5_000_000) // 5 MB
@@ -22,8 +27,50 @@ pub fn run() {
         )
         .manage(RecorderState::new())
         .manage(SidecarManager::new())
+        .manage(MeetingDetector::new())
         .setup(|app| {
-            // Warm up models in the background
+            // --- System tray ---
+            let show_item = MenuItem::with_id(app, "show", "Visa MötesSkribent", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Avsluta", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+
+            TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .tooltip("MötesSkribent")
+                .menu(&menu)
+                .on_menu_event(|app, event| {
+                    match event.id().as_ref() {
+                        "show" => {
+                            if let Some(w) = app.get_webview_window("main") {
+                                let _ = w.show();
+                                let _ = w.unminimize();
+                                let _ = w.set_focus();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.unminimize();
+                            let _ = w.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            // --- Warm up models in the background ---
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 // Emit starting status
@@ -64,16 +111,36 @@ pub fn run() {
             ollama_check_health,
             ollama_list_models,
             ollama_generate,
+            set_meeting_detection,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
-                let handle = app.clone();
-                tauri::async_runtime::block_on(async {
-                    let sidecar: tauri::State<'_, SidecarManager> = handle.state();
-                    sidecar.shutdown().await;
-                });
+            match event {
+                tauri::RunEvent::WindowEvent {
+                    label,
+                    event: tauri::WindowEvent::CloseRequested { api, .. },
+                    ..
+                } => {
+                    if label == "main" {
+                        // Hide window instead of closing — app lives in tray
+                        api.prevent_close();
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.hide();
+                        }
+                    }
+                }
+                tauri::RunEvent::Exit => {
+                    let handle = app.clone();
+                    tauri::async_runtime::block_on(async {
+                        let sidecar: tauri::State<'_, SidecarManager> = handle.state();
+                        sidecar.shutdown().await;
+                    });
+                    // Stop meeting detection
+                    let detector: tauri::State<'_, MeetingDetector> = app.state();
+                    detector.stop_monitoring();
+                }
+                _ => {}
             }
         });
 }

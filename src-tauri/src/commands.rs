@@ -1,4 +1,5 @@
 use crate::audio_capture::{self, AudioDevice, RecorderState, RecordingResult};
+use crate::meeting_detector::MeetingDetector;
 use crate::sidecar::{run_python_pipeline, TranscriptionConfig};
 use crate::sidecar_manager::SidecarManager;
 use std::path::PathBuf;
@@ -115,6 +116,20 @@ pub async fn ollama_generate(
     request_id: String,
 ) -> Result<String, String> {
     crate::ollama::generate_streaming(&app, &model, &prompt, &request_id).await
+}
+
+#[tauri::command]
+pub fn set_meeting_detection(
+    enabled: bool,
+    detector: State<'_, MeetingDetector>,
+    app: AppHandle,
+) {
+    if enabled {
+        detector.start_monitoring(app);
+    } else {
+        detector.stop_monitoring();
+    }
+    log::info!("Mötesdetektering: {}", if enabled { "aktiverad" } else { "avaktiverad" });
 }
 
 pub fn find_python(_app: &AppHandle) -> Result<String, String> {

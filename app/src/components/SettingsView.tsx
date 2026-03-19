@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { OllamaStatus } from "../hooks/useOllama";
 import { usePromptTemplates } from "../hooks/usePromptTemplates";
 import { PROMPT_TEMPLATES } from "../data/promptTemplates";
@@ -212,6 +213,9 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
           VAD-filtrering (rekommenderas)
         </label>
       </div>
+
+      {/* Meeting detection */}
+      <MeetingDetectionSection />
 
       {/* Ollama */}
       <div className="space-y-3 pt-4 border-t border-white/10">
@@ -467,6 +471,50 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+const MEETING_DETECTION_KEY = "meetingDetectionEnabled";
+
+function MeetingDetectionSection() {
+  const [enabled, setEnabled] = useState(() => {
+    return localStorage.getItem(MEETING_DETECTION_KEY) === "true";
+  });
+
+  // Sync with backend on mount
+  useEffect(() => {
+    if (enabled) {
+      invoke("set_meeting_detection", { enabled: true }).catch(() => {});
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggle = async (checked: boolean) => {
+    setEnabled(checked);
+    localStorage.setItem(MEETING_DETECTION_KEY, String(checked));
+    try {
+      await invoke("set_meeting_detection", { enabled: checked });
+    } catch (e) {
+      console.error("Kunde inte ändra mötesdetektering:", e);
+    }
+  };
+
+  return (
+    <div className="space-y-3 pt-4 border-t border-white/10">
+      <h3 className="text-lg font-semibold">Mötesdetektering</h3>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => toggle(e.target.checked)}
+          className="accent-[var(--color-primary)]"
+        />
+        Upptäck Teams-möten automatiskt
+      </label>
+      <p className="text-xs text-[var(--color-text-muted)]">
+        Övervakar om ett Microsoft Teams-möte startar och visar en notis som frågar om du vill spela in.
+        Appen måste köra i bakgrunden (systemfältet) för att detta ska fungera.
+      </p>
     </div>
   );
 }

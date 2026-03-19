@@ -26,6 +26,10 @@
         "minHeight": 500
       }
     ],
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "tooltip": "MötesSkribent"
+    },
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
     }

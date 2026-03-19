@@ -117,6 +117,19 @@ export default function App() {
     return () => { cancelled = true; unlisten?.(); };
   }, []);
 
+  // Listen for meeting-detected event (from meeting detector / notification click)
+  useEffect(() => {
+    let unlisten: UnlistenFn | null = null;
+    let cancelled = false;
+    listen("meeting-detected", () => {
+      if (cancelled) return;
+      setActiveView("recording");
+    }).then((fn) => {
+      if (cancelled) fn(); else unlisten = fn;
+    });
+    return () => { cancelled = true; unlisten?.(); };
+  }, []);
+
   // Fetch default output dir once for recording settings
   useEffect(() => {
     invoke<string>("get_default_output_dir").then((dir) => {
