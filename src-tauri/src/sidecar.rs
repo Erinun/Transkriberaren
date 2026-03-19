@@ -13,6 +13,7 @@ pub struct TranscriptionConfig {
     pub vad_enabled: bool,
     pub prompt: Option<String>,
     pub speed_profile: Option<String>,
+    pub audio_source: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,6 +84,7 @@ pub async fn run_python_pipeline(
 
     // Force Python to use UTF-8 for stdout/stderr (avoids cp1252 on Windows)
     cmd.env("PYTHONIOENCODING", "utf-8");
+    cmd.env("PYTHONUTF8", "1");
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
 

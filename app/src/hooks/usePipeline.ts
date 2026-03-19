@@ -10,6 +10,7 @@ export interface PipelineSettings {
   vadEnabled: boolean;
   prompt: string | null;
   speedProfile: string;
+  audioSource: string | null;
 }
 
 export interface PipelineSummary {
@@ -124,6 +125,7 @@ export function usePipeline() {
             vad_enabled: settings.vadEnabled,
             prompt: settings.prompt,
             speed_profile: settings.speedProfile,
+            audio_source: settings.audioSource,
           },
         });
       } catch (err: any) {

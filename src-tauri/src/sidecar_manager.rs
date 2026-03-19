@@ -123,6 +123,7 @@ impl SidecarManager {
         };
 
         cmd.env("PYTHONIOENCODING", "utf-8");
+        cmd.env("PYTHONUTF8", "1");
 
         // Belt-and-suspenders: set HF env vars from Rust side for bundled exe.
         // Redundant with sidecar_entry.py but protects against cases where
@@ -399,6 +400,7 @@ impl SidecarManager {
                 "vad_enabled": config.vad_enabled,
                 "prompt": config.prompt,
                 "speed_profile": config.speed_profile,
+                "audio_source": config.audio_source,
             }
         });
 

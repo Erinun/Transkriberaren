@@ -5,7 +5,7 @@ mod sidecar;
 mod sidecar_manager;
 
 use audio_capture::RecorderState;
-use commands::{copy_file_to, get_default_output_dir, ollama_check_health, ollama_generate, ollama_list_models, open_file, read_file_content, run_transcription, start_recording, stop_recording, write_text_to_file};
+use commands::{copy_file_to, get_default_output_dir, list_audio_devices, ollama_check_health, ollama_generate, ollama_list_models, open_file, read_file_content, run_transcription, start_recording, stop_recording, write_text_to_file};
 use sidecar_manager::SidecarManager;
 use tauri::{Emitter, Manager};
 
@@ -55,6 +55,7 @@ pub fn run() {
             run_transcription,
             open_file,
             get_default_output_dir,
+            list_audio_devices,
             start_recording,
             stop_recording,
             read_file_content,

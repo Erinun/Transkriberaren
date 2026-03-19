@@ -41,6 +41,7 @@ class PipelineConfig:
     include_word_timestamps: bool = False
     initial_prompt: str | None = None
     speed_profile: str = "balanced"
+    audio_source: str | None = None
 
 
 @dataclass
@@ -225,6 +226,7 @@ def run_pipeline(
         "processing_time": time.perf_counter() - pipeline_start,
         "model_name": str(config.model_path),
         "version": "0.2.0",
+        "audio_source": config.audio_source,
     }
 
     output_files: list[Path] = []

@@ -1,10 +1,11 @@
 import { useRecorder } from "../hooks/useRecorder";
+import { useAudioDevices } from "../hooks/useAudioDevices";
 import { useAudioLevel } from "../hooks/useAudioLevel";
 import AudioLevelBars from "./AudioLevelBars";
 import type { PipelineSettings } from "../hooks/usePipeline";
 
 interface Props {
-  onRecordingComplete: (filePath: string, settings: PipelineSettings) => void;
+  onRecordingComplete: (filePath: string, settings: PipelineSettings, deviceName: string) => void;
   settings: PipelineSettings;
 }
 
@@ -16,16 +17,17 @@ function formatTime(seconds: number): string {
 
 export default function RecordingView({ onRecordingComplete, settings }: Props) {
   const recorder = useRecorder();
+  const audioDevices = useAudioDevices();
   const levels = useAudioLevel(recorder.status === "recording");
 
   const handleStart = async () => {
-    await recorder.start();
+    await recorder.start(audioDevices.selectedDeviceId);
   };
 
   const handleStop = async () => {
-    const filePath = await recorder.stop();
-    if (filePath) {
-      onRecordingComplete(filePath, settings);
+    const result = await recorder.stop();
+    if (result) {
+      onRecordingComplete(result.path, settings, result.device_name);
     }
   };
 
@@ -77,6 +79,11 @@ export default function RecordingView({ onRecordingComplete, settings }: Props) 
               {formatTime(recorder.elapsedSeconds)}
             </p>
             <AudioLevelBars levels={levels} />
+            {recorder.deviceName && (
+              <p className="text-xs text-[var(--color-text-muted)]">
+                {recorder.deviceName}
+              </p>
+            )}
           </div>
 
           {/* Stop button */}
@@ -94,6 +101,37 @@ export default function RecordingView({ onRecordingComplete, settings }: Props) 
           {/* Title */}
           <h2 className="text-xl font-semibold">Inspelning</h2>
 
+          {/* Device selector */}
+          <div className="text-left space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-sm text-[var(--color-text-muted)]">Ljudkälla</label>
+              <button
+                onClick={audioDevices.refresh}
+                disabled={audioDevices.loading}
+                className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors p-1"
+                title="Uppdatera enhetslistan"
+              >
+                <svg className={`w-3.5 h-3.5 ${audioDevices.loading ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+            </div>
+            <select
+              value={audioDevices.selectedDeviceId}
+              onChange={(e) => audioDevices.selectDevice(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg glass text-sm bg-transparent border border-white/10 focus:border-[var(--color-primary)] focus:outline-none transition-colors"
+            >
+              {audioDevices.devices.map((dev) => (
+                <option key={dev.id} value={dev.id}>
+                  {dev.name}
+                </option>
+              ))}
+            </select>
+            {audioDevices.error && (
+              <p className="text-xs text-[var(--color-error)]">{audioDevices.error}</p>
+            )}
+          </div>
+
           {/* Start button */}
           <button
             onClick={handleStart}
@@ -107,6 +145,13 @@ export default function RecordingView({ onRecordingComplete, settings }: Props) 
             {recorder.status === "stopping" ? "Stoppar..." : "Starta inspelning"}
           </button>
         </>
+      )}
+
+      {/* Warning message */}
+      {recorder.warning && (
+        <p className="text-sm text-yellow-400 glass rounded-xl px-4 py-2" style={{ borderColor: "rgba(234, 179, 8, 0.3)" }}>
+          {recorder.warning}
+        </p>
       )}
 
       {/* Error message */}

@@ -4,9 +4,18 @@ Sets HF environment variables to point at bundled models BEFORE any imports
 that might trigger model downloads, then starts the persistent server.
 """
 
+import sys
+
+# Force UTF-8 for stdout/stderr IMMEDIATELY
+# Critical on Windows where PyInstaller may default to cp1252
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+
+print(f"[sidecar] stdout.encoding={sys.stdout.encoding}", file=sys.stderr)
+
 import os
 import shutil
-import sys
 
 # When running as a PyInstaller one-dir exe, sys.executable points to
 # dist/motesskribent-sidecar/motesskribent-sidecar.exe.
@@ -78,6 +87,7 @@ else:
 
 # Also ensure PYTHONIOENCODING is set for Windows
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+os.environ.setdefault("PYTHONUTF8", "1")
 
 print(
     f"[sidecar] HF_HOME={os.environ.get('HF_HOME', '<ej satt>')}, "

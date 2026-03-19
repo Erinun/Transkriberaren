@@ -1,4 +1,4 @@
-use crate::audio_capture::RecorderState;
+use crate::audio_capture::{self, AudioDevice, RecorderState, RecordingResult};
 use crate::sidecar::{run_python_pipeline, TranscriptionConfig};
 use crate::sidecar_manager::SidecarManager;
 use std::path::PathBuf;
@@ -62,18 +62,24 @@ pub async fn write_text_to_file(content: String, destination: String) -> Result<
 }
 
 #[tauri::command]
+pub fn list_audio_devices() -> Vec<AudioDevice> {
+    audio_capture::list_audio_devices()
+}
+
+#[tauri::command]
 pub async fn start_recording(
     state: State<'_, RecorderState>,
     app: AppHandle,
-) -> Result<(), String> {
-    crate::audio_capture::start_recording(&state, app)
+    device_id: Option<String>,
+) -> Result<String, String> {
+    audio_capture::start_recording(&state, app, device_id)
 }
 
 #[tauri::command]
 pub async fn stop_recording(
     state: State<'_, RecorderState>,
-) -> Result<String, String> {
-    crate::audio_capture::stop_recording(&state)
+) -> Result<RecordingResult, String> {
+    audio_capture::stop_recording(&state)
 }
 
 #[tauri::command]

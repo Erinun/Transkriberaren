@@ -93,6 +93,7 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
       vadEnabled,
       prompt: null,
       speedProfile,
+      audioSource: null,
     });
   };
 

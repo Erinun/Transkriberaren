@@ -61,6 +61,7 @@ function loadSettingsForRecording(): PipelineSettings {
     vadEnabled,
     prompt: null,
     speedProfile,
+    audioSource: null,
   };
 }
 
@@ -132,11 +133,11 @@ export default function App() {
     pipeline.start(filePath, settings);
   };
 
-  const handleRecordingComplete = async (filePath: string, settings: PipelineSettings) => {
-    let finalSettings = settings;
-    if (!settings.outputDir) {
+  const handleRecordingComplete = async (filePath: string, settings: PipelineSettings, deviceName?: string) => {
+    let finalSettings = { ...settings, audioSource: deviceName ?? null };
+    if (!finalSettings.outputDir) {
       const dir = await invoke<string>("get_default_output_dir");
-      finalSettings = { ...settings, outputDir: dir };
+      finalSettings = { ...finalSettings, outputDir: dir };
     }
     const name = filePath.split(/[\\/]/).pop() ?? filePath;
     setCurrentAudioName(name);
