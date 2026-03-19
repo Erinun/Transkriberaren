@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useRecorder } from "../hooks/useRecorder";
 import { useAudioDevices } from "../hooks/useAudioDevices";
 import { useAudioLevel } from "../hooks/useAudioLevel";
@@ -19,6 +20,7 @@ export default function RecordingView({ onRecordingComplete, settings }: Props) 
   const recorder = useRecorder();
   const audioDevices = useAudioDevices();
   const levels = useAudioLevel(recorder.status === "recording");
+  const [showInfo, setShowInfo] = useState(false);
 
   const handleStart = async () => {
     await recorder.start(audioDevices.selectedDeviceId);
@@ -104,7 +106,20 @@ export default function RecordingView({ onRecordingComplete, settings }: Props) 
           {/* Device selector */}
           <div className="text-left space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="text-sm text-[var(--color-text-muted)]">Ljudkälla</label>
+              <div className="flex items-center gap-1.5">
+                <label className="text-sm text-[var(--color-text-muted)]">Ljudkälla</label>
+                <button
+                  onClick={() => setShowInfo(!showInfo)}
+                  className={`w-4 h-4 rounded-full text-[10px] font-bold leading-none flex items-center justify-center transition-colors ${
+                    showInfo
+                      ? "bg-[var(--color-primary)] text-white"
+                      : "bg-white/10 text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/20"
+                  }`}
+                  title="Visa information om ljudkällor"
+                >
+                  i
+                </button>
+              </div>
               <button
                 onClick={audioDevices.refresh}
                 disabled={audioDevices.loading}
@@ -116,16 +131,40 @@ export default function RecordingView({ onRecordingComplete, settings }: Props) 
                 </svg>
               </button>
             </div>
+            {showInfo && (
+              <div className="glass rounded-lg px-3 py-2.5 text-xs space-y-1.5" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
+                <p><span className="font-medium text-[var(--color-text)]">Mikrofoner</span> <span className="text-[var(--color-text-muted)]">— Spelar in ljud från en mikrofon (din röst). Välj denna om du bara vill fånga vad som sägs i rummet.</span></p>
+                <p><span className="font-medium text-[var(--color-text)]">Systemljud</span> <span className="text-[var(--color-text-muted)]">— Spelar in ljud som spelas upp av datorn (t.ex. motpartens röst i ett videosamtal). Ingen mikrofon används.</span></p>
+                <p><span className="font-medium text-[var(--color-text)]">Mikrofon + Systemljud</span> <span className="text-[var(--color-text-muted)]">— Kombinerar mikrofon och systemljud i en inspelning. Bäst för videosamtal där du vill fånga både din röst och motpartens.</span></p>
+              </div>
+            )}
             <select
               value={audioDevices.selectedDeviceId}
               onChange={(e) => audioDevices.selectDevice(e.target.value)}
               className="w-full px-3 py-2 rounded-lg glass text-sm bg-transparent border border-white/10 focus:border-[var(--color-primary)] focus:outline-none transition-colors"
             >
-              {audioDevices.devices.map((dev) => (
-                <option key={dev.id} value={dev.id}>
-                  {dev.name}
-                </option>
-              ))}
+              {(() => {
+                const categories: Record<string, string> = {
+                  input: "Mikrofoner",
+                  loopback: "Systemljud (loopback)",
+                  mixed: "Mikrofon + Systemljud",
+                };
+                const grouped = new Map<string, typeof audioDevices.devices>();
+                for (const dev of audioDevices.devices) {
+                  const cat = dev.category || "input";
+                  if (!grouped.has(cat)) grouped.set(cat, []);
+                  grouped.get(cat)!.push(dev);
+                }
+                return Array.from(grouped.entries()).map(([cat, devs]) => (
+                  <optgroup key={cat} label={categories[cat] || cat}>
+                    {devs.map((dev) => (
+                      <option key={dev.id} value={dev.id}>
+                        {dev.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ));
+              })()}
             </select>
             {audioDevices.error && (
               <p className="text-xs text-[var(--color-error)]">{audioDevices.error}</p>
