@@ -21,6 +21,7 @@ pub struct AudioDevice {
     pub id: String,
     pub name: String,
     pub is_loopback: bool,
+    pub category: String,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -101,6 +102,7 @@ pub fn list_audio_devices() -> Vec<AudioDevice> {
         id: "default_input".to_string(),
         name: "Standardmikrofon".to_string(),
         is_loopback: false,
+        category: "input".to_string(),
     });
 
     // Add named input devices (skip the one matching default to avoid duplicate)
@@ -114,6 +116,7 @@ pub fn list_audio_devices() -> Vec<AudioDevice> {
                     id: format!("input:{}", name),
                     name,
                     is_loopback: false,
+                    category: "input".to_string(),
                 });
             }
         }
@@ -125,6 +128,7 @@ pub fn list_audio_devices() -> Vec<AudioDevice> {
             id: "loopback".to_string(),
             name: "Systemljud (loopback)".to_string(),
             is_loopback: true,
+            category: "loopback".to_string(),
         });
 
         // Also add combined mic + system option
@@ -132,6 +136,7 @@ pub fn list_audio_devices() -> Vec<AudioDevice> {
             id: "mic_and_system".to_string(),
             name: "Mikrofon + Systemljud".to_string(),
             is_loopback: false,
+            category: "mixed".to_string(),
         });
     }
 
