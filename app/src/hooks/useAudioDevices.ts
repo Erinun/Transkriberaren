@@ -5,6 +5,7 @@ export interface AudioDevice {
   id: string;
   name: string;
   is_loopback: boolean;
+  category: string;
 }
 
 const STORAGE_KEY = "motesskribent-audio-device";

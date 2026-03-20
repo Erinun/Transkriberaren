@@ -131,6 +131,24 @@ body {
 }
 
 /* Range slider (ResultView font size) */
+/* Select dropdown dark theme */
+select {
+  color: var(--color-text);
+}
+select option,
+select optgroup {
+  background-color: var(--color-surface);
+  color: var(--color-text);
+}
+select optgroup {
+  color: var(--color-text-muted);
+  font-style: normal;
+}
+select option:checked {
+  background-color: var(--color-primary);
+  color: white;
+}
+
 .result-range {
   -webkit-appearance: none;
   appearance: none;

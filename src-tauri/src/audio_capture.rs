@@ -21,6 +21,7 @@ pub struct AudioDevice {
     pub id: String,
     pub name: String,
     pub is_loopback: bool,
+    pub category: String,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -84,8 +85,22 @@ struct AudioLevel {
 enum DeviceSelection {
     DefaultInput,
     Loopback,
+    NamedLoopback(String),
     MicAndSystem,
+    MicAndNamedOutput(String),
     NamedInput(String),
+}
+
+/// Find an output device by name.
+fn find_output_device_by_name(name: &str) -> Result<cpal::Device, String> {
+    let host = cpal::default_host();
+    let output_devices = host
+        .output_devices()
+        .map_err(|e| format!("Kunde inte lista utgångsenheter: {}", e))?;
+    output_devices
+        .into_iter()
+        .find(|d| d.name().ok().as_deref() == Some(name))
+        .ok_or_else(|| format!("Utgångsenheten '{}' hittades inte", name))
 }
 
 pub fn list_audio_devices() -> Vec<AudioDevice> {
@@ -101,6 +116,7 @@ pub fn list_audio_devices() -> Vec<AudioDevice> {
         id: "default_input".to_string(),
         name: "Standardmikrofon".to_string(),
         is_loopback: false,
+        category: "input".to_string(),
     });
 
     // Add named input devices (skip the one matching default to avoid duplicate)
@@ -114,25 +130,68 @@ pub fn list_audio_devices() -> Vec<AudioDevice> {
                     id: format!("input:{}", name),
                     name,
                     is_loopback: false,
+                    category: "input".to_string(),
                 });
             }
         }
     }
 
-    // Add loopback if default output device exists
-    if host.default_output_device().is_some() {
+    // Enumerate output devices for loopback and mixed options
+    let default_output_name = host
+        .default_output_device()
+        .and_then(|d| d.name().ok());
+
+    if default_output_name.is_some() {
+        // Generic loopback (default output) — backwards-compatible
         devices.push(AudioDevice {
             id: "loopback".to_string(),
-            name: "Systemljud (loopback)".to_string(),
+            name: "Systemljud (standard)".to_string(),
             is_loopback: true,
+            category: "loopback".to_string(),
         });
 
-        // Also add combined mic + system option
+        // Per-output-device loopback entries
+        if let Ok(output_devices) = host.output_devices() {
+            for dev in output_devices {
+                if let Ok(name) = dev.name() {
+                    // Skip the default — already covered by generic "loopback"
+                    if Some(&name) == default_output_name.as_ref() {
+                        continue;
+                    }
+                    devices.push(AudioDevice {
+                        id: format!("loopback:{}", name),
+                        name: format!("Systemljud via {}", name),
+                        is_loopback: true,
+                        category: "loopback".to_string(),
+                    });
+                }
+            }
+        }
+
+        // Generic mic + system (default output) — backwards-compatible
         devices.push(AudioDevice {
             id: "mic_and_system".to_string(),
-            name: "Mikrofon + Systemljud".to_string(),
+            name: "Mikrofon + Systemljud (standard)".to_string(),
             is_loopback: false,
+            category: "mixed".to_string(),
         });
+
+        // Per-output-device mic + output entries
+        if let Ok(output_devices) = host.output_devices() {
+            for dev in output_devices {
+                if let Ok(name) = dev.name() {
+                    if Some(&name) == default_output_name.as_ref() {
+                        continue;
+                    }
+                    devices.push(AudioDevice {
+                        id: format!("mic_and_output:{}", name),
+                        name: format!("Mikrofon + {}", name),
+                        is_loopback: false,
+                        category: "mixed".to_string(),
+                    });
+                }
+            }
+        }
     }
 
     devices
@@ -175,6 +234,12 @@ pub fn start_recording(
         None | Some("default_input") => DeviceSelection::DefaultInput,
         Some("loopback") => DeviceSelection::Loopback,
         Some("mic_and_system") => DeviceSelection::MicAndSystem,
+        Some(id) if id.starts_with("loopback:") => {
+            DeviceSelection::NamedLoopback(id["loopback:".len()..].to_string())
+        }
+        Some(id) if id.starts_with("mic_and_output:") => {
+            DeviceSelection::MicAndNamedOutput(id["mic_and_output:".len()..].to_string())
+        }
         Some(id) if id.starts_with("input:") => {
             DeviceSelection::NamedInput(id["input:".len()..].to_string())
         }
@@ -185,7 +250,10 @@ pub fn start_recording(
 
     match selection {
         DeviceSelection::MicAndSystem => {
-            start_recording_mixed(guard, host, app)
+            start_recording_mixed(guard, host, app, None)
+        }
+        DeviceSelection::MicAndNamedOutput(ref name) => {
+            start_recording_mixed(guard, host, app, Some(name.clone()))
         }
         _ => {
             start_recording_single(guard, host, app, selection)
@@ -221,6 +289,14 @@ fn start_recording_single(
                 .map_err(|e| format!("Kunde inte öppna loopback-enheten: {}", e))?;
             (device, cfg, name)
         }
+        DeviceSelection::NamedLoopback(target_name) => {
+            let device = find_output_device_by_name(target_name)?;
+            let name = format!("Systemljud via {}", target_name);
+            let cfg = device
+                .default_output_config()
+                .map_err(|e| format!("Kunde inte öppna loopback-enheten: {}", e))?;
+            (device, cfg, name)
+        }
         DeviceSelection::NamedInput(target_name) => {
             let input_devices = host
                 .input_devices()
@@ -235,7 +311,7 @@ fn start_recording_single(
                 .map_err(|e| format!("Kunde inte öppna enheten: {}", e))?;
             (device, cfg, name)
         }
-        DeviceSelection::MicAndSystem => unreachable!(),
+        DeviceSelection::MicAndSystem | DeviceSelection::MicAndNamedOutput(_) => unreachable!(),
     };
 
     let _ = device; // We only needed it for config; will re-acquire on thread
@@ -297,6 +373,18 @@ fn start_recording_single(
                     return;
                 }
             },
+            DeviceSelection::NamedLoopback(target_name) => {
+                match find_output_device_by_name(target_name) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        let _ = app_err.emit(
+                            "recording-error",
+                            RecordingError { message: e },
+                        );
+                        return;
+                    }
+                }
+            }
             DeviceSelection::NamedInput(target_name) => {
                 match host.input_devices() {
                     Ok(devs) => {
@@ -327,11 +415,11 @@ fn start_recording_single(
                     }
                 }
             }
-            DeviceSelection::MicAndSystem => unreachable!(),
+            DeviceSelection::MicAndSystem | DeviceSelection::MicAndNamedOutput(_) => unreachable!(),
         };
 
         let config = match &selection_clone {
-            DeviceSelection::Loopback => match device.default_output_config() {
+            DeviceSelection::Loopback | DeviceSelection::NamedLoopback(_) => match device.default_output_config() {
                 Ok(c) => c,
                 Err(e) => {
                     let _ = app_err.emit(
@@ -503,14 +591,18 @@ fn start_recording_mixed(
     mut guard: std::sync::MutexGuard<'_, Option<RecordingHandle>>,
     host: cpal::Host,
     app: AppHandle,
+    output_device_name: Option<String>,
 ) -> Result<String, String> {
     // Verify both devices exist
     let mic_device = host
         .default_input_device()
         .ok_or_else(|| "Ingen mikrofon hittades".to_string())?;
-    let output_device = host
-        .default_output_device()
-        .ok_or_else(|| "Ingen utgångsenhet hittades för systemljud".to_string())?;
+    let output_device = match &output_device_name {
+        Some(name) => find_output_device_by_name(name)?,
+        None => host
+            .default_output_device()
+            .ok_or_else(|| "Ingen utgångsenhet hittades för systemljud".to_string())?,
+    };
 
     let mic_config = mic_device
         .default_input_config()
@@ -539,7 +631,10 @@ fn start_recording_mixed(
 
     let running = Arc::new(AtomicBool::new(true));
     let audio_level = Arc::new(AtomicU32::new(0u32));
-    let device_name = "Mikrofon + Systemljud".to_string();
+    let device_name = match &output_device_name {
+        Some(name) => format!("Mikrofon + {}", name),
+        None => "Mikrofon + Systemljud".to_string(),
+    };
 
     // Ring buffer capacity: ~2 seconds at mic sample rate
     let rb_capacity = (mic_sample_rate as usize) * 2;
@@ -562,8 +657,9 @@ fn start_recording_mixed(
     let running_lb = running.clone();
     let app_lb = app.clone();
     let loopback_producer = Arc::new(Mutex::new(loopback_producer));
+    let lb_device_name = output_device_name.clone();
     let loopback_thread = Some(std::thread::spawn(move || {
-        run_loopback_capture_thread(loopback_producer, running_lb, app_lb);
+        run_loopback_capture_thread(loopback_producer, running_lb, app_lb, lb_device_name);
     }));
 
     // Mixer thread
@@ -586,6 +682,7 @@ fn start_recording_mixed(
 
     spawn_tick_and_level_emitters(&running, &audio_level, &app);
 
+    let return_name = device_name.clone();
     *guard = Some(RecordingHandle {
         running,
         writer,
@@ -597,7 +694,7 @@ fn start_recording_mixed(
         device_name,
     });
 
-    Ok("Mikrofon + Systemljud".to_string())
+    Ok(return_name)
 }
 
 pub fn stop_recording(state: &RecorderState) -> Result<RecordingResult, String> {
@@ -804,21 +901,42 @@ fn run_loopback_capture_thread(
     producer: SharedProducer,
     running: Arc<AtomicBool>,
     app: AppHandle,
+    output_device_name: Option<String>,
 ) {
-    let host = cpal::default_host();
-    let device = match host.default_output_device() {
-        Some(d) => d,
-        None => {
-            let _ = app.emit(
-                "recording-warning",
-                RecordingWarning {
-                    message: "Ingen utgångsenhet hittades, fortsätter med bara mikrofon".to_string(),
-                },
-            );
-            while running.load(Ordering::Relaxed) {
-                std::thread::sleep(std::time::Duration::from_millis(100));
+    let device = match &output_device_name {
+        Some(name) => match find_output_device_by_name(name) {
+            Ok(d) => d,
+            Err(e) => {
+                let _ = app.emit(
+                    "recording-warning",
+                    RecordingWarning {
+                        message: format!("{}, fortsätter med bara mikrofon", e),
+                    },
+                );
+                while running.load(Ordering::Relaxed) {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                return;
             }
-            return;
+        },
+        None => {
+            let host = cpal::default_host();
+            match host.default_output_device() {
+                Some(d) => d,
+                None => {
+                    let _ = app.emit(
+                        "recording-warning",
+                        RecordingWarning {
+                            message: "Ingen utgångsenhet hittades, fortsätter med bara mikrofon"
+                                .to_string(),
+                        },
+                    );
+                    while running.load(Ordering::Relaxed) {
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    }
+                    return;
+                }
+            }
         }
     };
 
