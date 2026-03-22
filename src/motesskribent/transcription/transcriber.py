@@ -18,6 +18,27 @@ from faster_whisper import BatchedInferencePipeline, WhisperModel
 
 logger = logging.getLogger(__name__)
 
+
+class ModelResolutionError(Exception):
+    """Raised when a model cannot be resolved to a local path in offline mode."""
+    pass
+
+
+def _build_diagnostic_message(model_id: str, reason: str, path: str | None = None) -> str:
+    """Build a Swedish diagnostic message for model resolution failures."""
+    lines = [
+        f"Kunde inte hitta modellen '{model_id}' lokalt.",
+        f"Orsak: {reason}",
+    ]
+    if path:
+        lines.append(f"Sökt i: {path}")
+    lines.append(
+        "Appen körs i offline-läge (HF_HUB_OFFLINE=1) och kan inte ladda ner modeller. "
+        "Kontrollera att modellfilerna finns i installationskatalogen."
+    )
+    return "\n".join(lines)
+
+
 # Module-level model cache
 _cached_model: WhisperModel | None = None
 _cached_model_key: tuple | None = None
@@ -93,8 +114,14 @@ def _resolve_model_path(model_path: Path | str) -> Path | str:
     i dessa miljöer, så vi resolvar till den faktiska snapshot-katalogen direkt.
 
     Om model_path redan är en lokal katalog, eller om cache inte finns/är
-    ofullständig, returneras model_path oförändrad.
+    ofullständig, returneras model_path oförändrad (i online-läge).
+
+    I offline-läge (HF_HUB_OFFLINE=1) kastas ModelResolutionError vid
+    varje fallback-punkt, eftersom modellen inte kan laddas ner.
     """
+    is_offline = os.environ.get("HF_HUB_OFFLINE") == "1"
+    model_id = str(model_path)
+
     path = Path(model_path)
     if path.is_dir():
         logger.debug("Modellsökväg är redan en lokal katalog: %s", path)
@@ -102,6 +129,10 @@ def _resolve_model_path(model_path: Path | str) -> Path | str:
 
     hf_cache = os.environ.get("HF_HUB_CACHE")
     if not hf_cache:
+        if is_offline:
+            raise ModelResolutionError(
+                _build_diagnostic_message(model_id, "HF_HUB_CACHE är inte satt")
+            )
         return model_path
 
     # Diagnostisk loggning för felsökning i bundlade miljöer
@@ -113,33 +144,62 @@ def _resolve_model_path(model_path: Path | str) -> Path | str:
     )
 
     # Konvertera HF modell-ID till cache-katalognamn: "KBLab/kb-whisper-small" → "models--KBLab--kb-whisper-small"
-    model_id = str(model_path)
     cache_dir_name = "models--" + model_id.replace("/", "--")
     model_cache_dir = Path(hf_cache) / cache_dir_name
 
     if not model_cache_dir.is_dir():
+        if is_offline:
+            raise ModelResolutionError(
+                _build_diagnostic_message(
+                    model_id, "Modellkatalogen saknas", str(model_cache_dir)
+                )
+            )
         logger.debug("HF cache-katalog finns inte: %s", model_cache_dir)
         return model_path
 
     # Läs refs/main för att hitta snapshot-hash
     refs_main = model_cache_dir / "refs" / "main"
     if not refs_main.is_file():
-        logger.debug("refs/main finns inte i: %s", model_cache_dir)
+        if is_offline:
+            raise ModelResolutionError(
+                _build_diagnostic_message(
+                    model_id, "refs/main saknas", str(model_cache_dir)
+                )
+            )
+        logger.warning("refs/main finns inte i: %s", model_cache_dir)
         return model_path
 
     try:
         snapshot_hash = refs_main.read_text(encoding="utf-8").strip()
     except OSError as e:
         logger.warning("Kunde inte läsa refs/main: %s", e)
+        if is_offline:
+            raise ModelResolutionError(
+                _build_diagnostic_message(
+                    model_id, f"Kunde inte läsa refs/main: {e}", str(refs_main)
+                )
+            )
         return model_path
 
     if not snapshot_hash:
-        logger.debug("refs/main är tom i: %s", model_cache_dir)
+        if is_offline:
+            raise ModelResolutionError(
+                _build_diagnostic_message(
+                    model_id, "refs/main är tom", str(refs_main)
+                )
+            )
+        logger.warning("refs/main är tom i: %s", model_cache_dir)
         return model_path
 
     snapshot_dir = model_cache_dir / "snapshots" / snapshot_hash
     if not snapshot_dir.is_dir():
-        logger.debug("Snapshot-katalog finns inte: %s", snapshot_dir)
+        if is_offline:
+            raise ModelResolutionError(
+                _build_diagnostic_message(
+                    model_id, "Snapshot-katalogen saknas", str(snapshot_dir)
+                )
+            )
+        logger.warning("Snapshot-katalog finns inte: %s", snapshot_dir)
         return model_path
 
     model_bin = snapshot_dir / "model.bin"
@@ -153,7 +213,13 @@ def _resolve_model_path(model_path: Path | str) -> Path | str:
 
     # Verifiera att model.bin finns (CTranslate2-modellens huvudfil)
     if not model_bin.is_file():
-        logger.debug("model.bin saknas i snapshot: %s", snapshot_dir)
+        if is_offline:
+            raise ModelResolutionError(
+                _build_diagnostic_message(
+                    model_id, "model.bin saknas i snapshot-katalogen", str(snapshot_dir)
+                )
+            )
+        logger.warning("model.bin saknas i snapshot: %s", snapshot_dir)
         return model_path
 
     logger.info("Resolvade HF modell-ID '%s' till lokal sökväg: %s", model_id, snapshot_dir)
@@ -188,12 +254,26 @@ def _get_model(
         "Laddar modell: path=%s, compute_type=%s, cpu_threads=%d",
         resolved, compute_type, cpu_threads,
     )
-    model = WhisperModel(
-        str(resolved),
-        device="cpu",
-        compute_type=compute_type,
-        cpu_threads=cpu_threads,
-    )
+    try:
+        model = WhisperModel(
+            str(resolved),
+            device="cpu",
+            compute_type=compute_type,
+            cpu_threads=cpu_threads,
+        )
+    except Exception as e:
+        if isinstance(e, ModelResolutionError):
+            raise
+        is_offline = os.environ.get("HF_HUB_OFFLINE") == "1"
+        if is_offline:
+            raise ModelResolutionError(
+                _build_diagnostic_message(
+                    str(model_path),
+                    f"WhisperModel kunde inte ladda modellen: {e}",
+                    str(resolved),
+                )
+            ) from e
+        raise
 
     _cached_model = model
     _cached_model_key = key

@@ -137,9 +137,22 @@ pub fn list_audio_devices() -> Vec<AudioDevice> {
     }
 
     // Enumerate output devices for loopback and mixed options
-    let default_output_name = host
-        .default_output_device()
-        .and_then(|d| d.name().ok());
+    let default_output_device = host.default_output_device();
+    log::info!(
+        "default_output_device: exists={}",
+        default_output_device.is_some()
+    );
+    let default_output_name = default_output_device.and_then(|d| {
+        let name_result = d.name();
+        log::info!("default_output_device.name() = {:?}", name_result);
+        name_result.ok()
+    });
+    log::info!("default_output_name: {:?}", default_output_name);
+
+    if let Ok(all_outputs) = host.output_devices() {
+        let count = all_outputs.count();
+        log::info!("Total output devices: {}", count);
+    }
 
     if default_output_name.is_some() {
         // Generic loopback (default output) — backwards-compatible
@@ -194,6 +207,11 @@ pub fn list_audio_devices() -> Vec<AudioDevice> {
         }
     }
 
+    log::info!(
+        "Returning {} devices: {:?}",
+        devices.len(),
+        devices.iter().map(|d| format!("{}({})", d.id, d.category)).collect::<Vec<_>>()
+    );
     devices
 }
 

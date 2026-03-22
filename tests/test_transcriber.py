@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from motesskribent.transcription.transcriber import (
+    ModelResolutionError,
     TranscribedSegment,
     TranscribedWord,
     TranscriptionResult,
@@ -147,5 +148,78 @@ class TestResolveModelPath:
         # Ingen model.bin skapad
 
         monkeypatch.setenv("HF_HUB_CACHE", str(cache_dir))
+        result = _resolve_model_path("KBLab/kb-whisper-small")
+        assert result == "KBLab/kb-whisper-small"
+
+
+class TestResolveModelPathOffline:
+    """Tester för _resolve_model_path() i offline-läge (HF_HUB_OFFLINE=1)."""
+
+    def test_raises_when_offline_and_no_cache(self, monkeypatch):
+        """HF_HUB_OFFLINE=1 utan HF_HUB_CACHE ska ge ModelResolutionError."""
+        monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+        monkeypatch.delenv("HF_HUB_CACHE", raising=False)
+        with pytest.raises(ModelResolutionError, match="HF_HUB_CACHE"):
+            _resolve_model_path("KBLab/kb-whisper-small")
+
+    def test_raises_when_offline_and_cache_dir_missing(self, tmp_path, monkeypatch):
+        """HF_HUB_OFFLINE=1 med HF_HUB_CACHE som pekar på tom katalog."""
+        cache_dir = tmp_path / "empty_cache"
+        cache_dir.mkdir()
+        monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+        monkeypatch.setenv("HF_HUB_CACHE", str(cache_dir))
+        with pytest.raises(ModelResolutionError, match="Modellkatalogen saknas"):
+            _resolve_model_path("KBLab/kb-whisper-small")
+
+    def test_raises_when_offline_and_refs_main_missing(self, tmp_path, monkeypatch):
+        """HF_HUB_OFFLINE=1 med modellkatalog men utan refs/main."""
+        cache_dir = tmp_path / "hf_cache"
+        model_dir = cache_dir / "models--KBLab--kb-whisper-small"
+        model_dir.mkdir(parents=True)
+        monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+        monkeypatch.setenv("HF_HUB_CACHE", str(cache_dir))
+        with pytest.raises(ModelResolutionError, match="refs/main saknas"):
+            _resolve_model_path("KBLab/kb-whisper-small")
+
+    def test_raises_when_offline_and_model_bin_missing(self, tmp_path, monkeypatch):
+        """HF_HUB_OFFLINE=1 med refs/main men utan model.bin."""
+        cache_dir = tmp_path / "hf_cache"
+        model_dir = cache_dir / "models--KBLab--kb-whisper-small"
+        snapshot_hash = "abc123"
+        snapshot_dir = model_dir / "snapshots" / snapshot_hash
+
+        refs_dir = model_dir / "refs"
+        refs_dir.mkdir(parents=True)
+        (refs_dir / "main").write_text(snapshot_hash, encoding="utf-8")
+        snapshot_dir.mkdir(parents=True)
+        # Ingen model.bin
+
+        monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+        monkeypatch.setenv("HF_HUB_CACHE", str(cache_dir))
+        with pytest.raises(ModelResolutionError, match="model.bin saknas"):
+            _resolve_model_path("KBLab/kb-whisper-small")
+
+    def test_succeeds_when_offline_and_model_exists(self, tmp_path, monkeypatch):
+        """HF_HUB_OFFLINE=1 med komplett modellstruktur ska returnera snapshot-sökväg."""
+        cache_dir = tmp_path / "hf_cache"
+        model_dir = cache_dir / "models--KBLab--kb-whisper-small"
+        snapshot_hash = "abc123def456"
+        snapshot_dir = model_dir / "snapshots" / snapshot_hash
+
+        refs_dir = model_dir / "refs"
+        refs_dir.mkdir(parents=True)
+        (refs_dir / "main").write_text(snapshot_hash, encoding="utf-8")
+        snapshot_dir.mkdir(parents=True)
+        (snapshot_dir / "model.bin").write_bytes(b"fake model data")
+
+        monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+        monkeypatch.setenv("HF_HUB_CACHE", str(cache_dir))
+        result = _resolve_model_path("KBLab/kb-whisper-small")
+        assert result == snapshot_dir
+
+    def test_dev_mode_still_returns_model_id(self, monkeypatch):
+        """Utan HF_HUB_OFFLINE ska befintligt beteende bibehållas (regression)."""
+        monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+        monkeypatch.delenv("HF_HUB_CACHE", raising=False)
         result = _resolve_model_path("KBLab/kb-whisper-small")
         assert result == "KBLab/kb-whisper-small"

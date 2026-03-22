@@ -30,6 +30,8 @@ def _handle_ping(request_id: str) -> None:
 
 def _handle_warmup(request_id: str, config: dict) -> None:
     """Load models into memory. Parallelizes whisper + diarize loading."""
+    from motesskribent.transcription.transcriber import ModelResolutionError
+
     model = config.get("model", "KBLab/kb-whisper-small")
     num_speakers = config.get("num_speakers")
     need_diarizer = num_speakers is None or num_speakers > 1
@@ -58,7 +60,17 @@ def _handle_warmup(request_id: str, config: dict) -> None:
 
         # Check for errors — transcriber is required, diarizer is optional
         transcriber_future = futures[0]
-        transcriber_future.result()  # Re-raise if transcriber failed
+        try:
+            transcriber_future.result()  # Re-raise if transcriber failed
+        except ModelResolutionError as e:
+            _emit({
+                "request_id": request_id,
+                "type": "error",
+                "error_type": "model_not_found",
+                "message": str(e),
+                "stage": "warmup",
+            })
+            return
 
         diarizer_ok = True
         if need_diarizer and len(futures) > 1:

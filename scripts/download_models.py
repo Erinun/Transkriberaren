@@ -83,11 +83,26 @@ def main():
     )
     print("  OK")
 
-    # 2. Diarize-modeller (Silero VAD + WeSpeaker ONNX) — auto-downloaded
-    print("[2/3] Laddar ned diarize-modeller (Silero VAD + WeSpeaker) ...")
+    # 2. Diarize-modeller (Silero VAD + WeSpeaker ONNX)
+    #    - Silero VAD: bundlad i silero_vad-paketet (importlib.resources), ingen nedladdning behövs.
+    #      PyInstaller collect_all("silero_vad") tar hand om den.
+    #    - WeSpeaker: laddar ned ONNX-modell till ~/.wespeaker/en/model.onnx.
+    #      Biblioteket stödjer inga env-variabler, så vi kopierar till models/wespeaker/en/.
+    print("[2/3] Laddar ned diarize-modeller (WeSpeaker ONNX) ...")
     sys.path.insert(0, str(PROJECT_ROOT / "src"))
     from motesskribent.diarization.diarizer import _warmup_models
     _warmup_models()
+
+    # Kopiera WeSpeaker-modellen från ~/.wespeaker/en/ till models/wespeaker/en/
+    wespeaker_src = Path.home() / ".wespeaker" / "en" / "model.onnx"
+    wespeaker_dest = PROJECT_ROOT / "models" / "wespeaker" / "en" / "model.onnx"
+    if wespeaker_src.exists():
+        wespeaker_dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(wespeaker_src, wespeaker_dest)
+        print(f"  WeSpeaker-modell kopierad: {wespeaker_dest}")
+        print(f"  Storlek: {wespeaker_dest.stat().st_size / (1024**2):.1f} MB")
+    else:
+        print(f"  VARNING: WeSpeaker-modell saknas: {wespeaker_src}")
     print("  OK")
 
     # 3. Replace symlinks with real file copies (critical for NSIS packaging)
@@ -106,10 +121,11 @@ def main():
 
     print()
     print("Alla modeller nedladdade!")
-    print(f"Katalog: {CACHE_DIR}")
+    print(f"Katalog: {PROJECT_ROOT / 'models'}")
 
-    # Print total size
-    total = sum(f.stat().st_size for f in Path(CACHE_DIR).rglob("*") if f.is_file())
+    # Print total size (hub + torch + wespeaker)
+    models_root = PROJECT_ROOT / "models"
+    total = sum(f.stat().st_size for f in models_root.rglob("*") if f.is_file())
     print(f"Total storlek: {total / (1024**3):.2f} GB")
 
 

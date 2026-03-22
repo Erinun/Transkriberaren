@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRecorder } from "../hooks/useRecorder";
 import { useAudioDevices } from "../hooks/useAudioDevices";
 import { useAudioLevel } from "../hooks/useAudioLevel";
@@ -14,6 +14,95 @@ function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+const CATEGORIES: Record<string, string> = {
+  input: "Mikrofoner",
+  loopback: "Systemljud (loopback)",
+  mixed: "Mikrofon + Systemljud",
+};
+
+function DeviceDropdown({
+  devices,
+  selectedId,
+  onSelect,
+}: {
+  devices: { id: string; name: string; category: string }[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const selected = devices.find((d) => d.id === selectedId);
+  const grouped = new Map<string, typeof devices>();
+  for (const dev of devices) {
+    const cat = dev.category || "input";
+    if (!grouped.has(cat)) grouped.set(cat, []);
+    grouped.get(cat)!.push(dev);
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full px-3 py-2 rounded-lg text-sm bg-[var(--color-surface)] border border-white/10 focus:border-[var(--color-primary)] focus:outline-none transition-colors text-left flex items-center justify-between"
+      >
+        <span className={selected ? "text-[var(--color-text)]" : "text-[var(--color-text-muted)]"}>
+          {selected?.name || "Välj enhet..."}
+        </span>
+        <svg
+          className={`w-4 h-4 text-[var(--color-text-muted)] transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-lg bg-[var(--color-surface)] border border-white/10 shadow-lg max-h-60 overflow-y-auto">
+          {Array.from(grouped.entries()).map(([cat, devs]) => (
+            <div key={cat}>
+              <div className="px-3 py-1.5 text-xs text-[var(--color-text-muted)] font-medium">
+                {CATEGORIES[cat] || cat}
+              </div>
+              {devs.map((dev) => (
+                <button
+                  key={dev.id}
+                  type="button"
+                  onClick={() => {
+                    onSelect(dev.id);
+                    setOpen(false);
+                  }}
+                  className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
+                    dev.id === selectedId
+                      ? "bg-[var(--color-primary)] text-white"
+                      : "text-[var(--color-text)] hover:bg-white/5"
+                  }`}
+                >
+                  {dev.name}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function RecordingView({ onRecordingComplete, settings }: Props) {
@@ -138,34 +227,11 @@ export default function RecordingView({ onRecordingComplete, settings }: Props) 
                 <p><span className="font-medium text-[var(--color-text)]">Mikrofon + Systemljud</span> <span className="text-[var(--color-text-muted)]">— Kombinerar mikrofon och systemljud i en inspelning. Bäst för videosamtal där du vill fånga både din röst och motpartens.</span></p>
               </div>
             )}
-            <select
-              value={audioDevices.selectedDeviceId}
-              onChange={(e) => audioDevices.selectDevice(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg glass text-sm bg-transparent border border-white/10 focus:border-[var(--color-primary)] focus:outline-none transition-colors"
-            >
-              {(() => {
-                const categories: Record<string, string> = {
-                  input: "Mikrofoner",
-                  loopback: "Systemljud (loopback)",
-                  mixed: "Mikrofon + Systemljud",
-                };
-                const grouped = new Map<string, typeof audioDevices.devices>();
-                for (const dev of audioDevices.devices) {
-                  const cat = dev.category || "input";
-                  if (!grouped.has(cat)) grouped.set(cat, []);
-                  grouped.get(cat)!.push(dev);
-                }
-                return Array.from(grouped.entries()).map(([cat, devs]) => (
-                  <optgroup key={cat} label={categories[cat] || cat}>
-                    {devs.map((dev) => (
-                      <option key={dev.id} value={dev.id}>
-                        {dev.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                ));
-              })()}
-            </select>
+            <DeviceDropdown
+              devices={audioDevices.devices}
+              selectedId={audioDevices.selectedDeviceId}
+              onSelect={audioDevices.selectDevice}
+            />
             {audioDevices.error && (
               <p className="text-xs text-[var(--color-error)]">{audioDevices.error}</p>
             )}

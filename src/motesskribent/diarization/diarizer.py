@@ -135,7 +135,7 @@ def diarize(
     start_time = time.perf_counter()
 
     # Bygg kwargs för diarize-anrop
-    kwargs: dict = {"audio": str(audio_path)}
+    kwargs: dict = {"audio_path": str(audio_path)}
     if num_speakers is not None:
         kwargs["num_speakers"] = num_speakers
     else:
@@ -146,7 +146,7 @@ def diarize(
 
     # Konvertera till SpeakerSegment-lista
     raw_segments: list[SpeakerSegment] = []
-    for seg in result:
+    for seg in result.segments:
         raw_segments.append(SpeakerSegment(
             start=seg.start,
             end=seg.end,
