@@ -72,10 +72,14 @@ export function useRecorder() {
       const deviceName = await invoke<string>("start_recording", { deviceId });
       setState((s) => ({ ...s, deviceName }));
     } catch (err: any) {
+      const msg = typeof err === "string" ? err : err.message ?? "";
+      const tauriMissing = msg.includes("reading 'invoke'");
       setState({
         status: "idle",
         elapsedSeconds: 0,
-        error: typeof err === "string" ? err : err.message ?? "Okänt fel",
+        error: tauriMissing
+          ? "Tauri API ej tillgängligt. Starta appen med 'cargo tauri dev', inte via webbläsare."
+          : msg || "Okänt fel",
         warning: null,
         deviceName: null,
       });
@@ -89,10 +93,14 @@ export function useRecorder() {
       setState(INITIAL_STATE);
       return result;
     } catch (err: any) {
+      const msg = typeof err === "string" ? err : err.message ?? "";
+      const tauriMissing = msg.includes("reading 'invoke'");
       setState({
         status: "idle",
         elapsedSeconds: 0,
-        error: typeof err === "string" ? err : err.message ?? "Okänt fel",
+        error: tauriMissing
+          ? "Tauri API ej tillgängligt. Starta appen med 'cargo tauri dev', inte via webbläsare."
+          : msg || "Okänt fel",
         warning: null,
         deviceName: null,
       });

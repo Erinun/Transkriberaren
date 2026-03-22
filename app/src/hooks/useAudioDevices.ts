@@ -31,7 +31,12 @@ export function useAudioDevices() {
         setSelectedDeviceId("default_input");
       }
     } catch (err: any) {
-      setError(typeof err === "string" ? err : err.message ?? "Kunde inte lista enheter");
+      const msg = typeof err === "string" ? err : err.message ?? "";
+      if (msg.includes("reading 'invoke'")) {
+        setError("Tauri API ej tillgängligt. Starta appen med 'cargo tauri dev', inte via webbläsare.");
+      } else {
+        setError(msg || "Kunde inte lista enheter");
+      }
     } finally {
       setLoading(false);
     }
