@@ -144,6 +144,11 @@ def run_pipeline(
     num_speakers = 0
     diarization_failed = False
     skip_diarization = config.num_speakers is not None and config.num_speakers <= 1
+    use_channel_diarization = (
+        not skip_diarization
+        and preprocessed.is_stereo_recording
+        and preprocessed.channel_audio_paths is not None
+    )
     warnings: list[str] = []
     trans_result = None
 
@@ -153,6 +158,9 @@ def run_pipeline(
         if skip_diarization:
             logger.info("Hoppar över diarisering (num_speakers=%s)", config.num_speakers)
             num_speakers = max(config.num_speakers, 1)
+            return 0.0
+        if use_channel_diarization:
+            logger.info("Använder kanalbaserad talarseparering (stereo-inspelning)")
             return 0.0
         try:
             from motesskribent.diarization.diarizer import diarize
@@ -189,7 +197,7 @@ def run_pipeline(
         )
         return time.perf_counter() - t
 
-    if skip_diarization:
+    if skip_diarization or use_channel_diarization:
         breakdown["diarization"] = _run_diarization()
         _progress("diarization", 0.35)
         breakdown["transcription"] = _run_transcription()
@@ -207,7 +215,16 @@ def run_pipeline(
     _progress("transcription", 0.90)
 
     # 4. Matcha talare
-    segments = _assign_speakers(trans_result.segments, diarization_segments)
+    if use_channel_diarization:
+        from motesskribent.diarization.channel_diarizer import assign_speakers_by_channel
+        segments, num_speakers = assign_speakers_by_channel(
+            trans_result.segments,
+            preprocessed.channel_audio_paths[0],  # mic
+            preprocessed.channel_audio_paths[1],  # system
+            sample_rate=preprocessed.sample_rate,
+        )
+    else:
+        segments = _assign_speakers(trans_result.segments, diarization_segments)
 
     if skip_diarization or diarization_failed:
         for seg in segments:

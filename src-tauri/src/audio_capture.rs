@@ -636,8 +636,9 @@ fn start_recording_mixed(
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
     let path = std::env::temp_dir().join(format!("motesskribent_rec_{}.wav", timestamp));
 
+    // Stereo WAV: left=mic, right=system — enables channel-based speaker separation
     let spec = WavSpec {
-        channels: 1,
+        channels: 2,
         sample_rate: mic_sample_rate,
         bits_per_sample: 16,
         sample_format: hound::SampleFormat::Int,
@@ -1167,26 +1168,36 @@ fn run_mixer_thread(
             vec![0.0f32; output_len]
         };
 
-        // Mix: mic * 0.7 + loopback * 0.7, clamped
+        // Write interleaved stereo: left=mic, right=system
         let mut sum_sq = 0.0f32;
         if let Ok(mut guard) = writer.lock() {
             if let Some(ref mut w) = *guard {
                 for i in 0..output_len {
                     let mic_s = if i < mic_read { mic_buf[i] } else { 0.0 };
                     let lb_s = lb_resampled[i];
-                    let mixed = (mic_s * 0.7 + lb_s * 0.7).clamp(-1.0, 1.0);
-                    sum_sq += mixed * mixed;
 
-                    let sample =
-                        (mixed * i16::MAX as f32).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
-                    if w.write_sample(sample).is_err() {
+                    // Left channel: mic
+                    let left = (mic_s.clamp(-1.0, 1.0) * i16::MAX as f32)
+                        .clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+                    // Right channel: system
+                    let right = (lb_s.clamp(-1.0, 1.0) * i16::MAX as f32)
+                        .clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+
+                    if w.write_sample(left).is_err() {
                         break;
                     }
+                    if w.write_sample(right).is_err() {
+                        break;
+                    }
+
+                    // VU meter from virtual mix
+                    let mixed = (mic_s * 0.7 + lb_s * 0.7).clamp(-1.0, 1.0);
+                    sum_sq += mixed * mixed;
                 }
             }
         }
 
-        // Update audio level from mixed signal
+        // Update audio level from virtual mix
         if output_len > 0 {
             let rms = (sum_sq / output_len as f32).sqrt();
             audio_level.store(rms.to_bits(), Ordering::Relaxed);

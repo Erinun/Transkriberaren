@@ -224,7 +224,7 @@ export default function RecordingView({ onRecordingComplete, settings }: Props) 
               <div className="glass rounded-lg px-3 py-2.5 text-xs space-y-1.5" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
                 <p><span className="font-medium text-[var(--color-text)]">Mikrofoner</span> <span className="text-[var(--color-text-muted)]">— Spelar in ljud från en mikrofon (din röst). Välj denna om du bara vill fånga vad som sägs i rummet.</span></p>
                 <p><span className="font-medium text-[var(--color-text)]">Systemljud</span> <span className="text-[var(--color-text-muted)]">— Spelar in ljud som spelas upp av datorn (t.ex. motpartens röst i ett videosamtal). Ingen mikrofon används.</span></p>
-                <p><span className="font-medium text-[var(--color-text)]">Mikrofon + Systemljud</span> <span className="text-[var(--color-text-muted)]">— Kombinerar mikrofon och systemljud i en inspelning. Bäst för videosamtal där du vill fånga både din röst och motpartens.</span></p>
+                <p><span className="font-medium text-[var(--color-text)]">Mikrofon + Systemljud</span> <span className="text-[var(--color-text-muted)]">— Kombinerar mikrofon och systemljud i en inspelning. Bäst för videosamtal där du vill fånga både din röst och motpartens. Talare separeras automatiskt baserat på kanal.</span></p>
               </div>
             )}
             <DeviceDropdown

@@ -95,3 +95,43 @@ class TestPreprocessAudio:
         result = preprocess_audio(wav, out_dir)
         assert out_dir.exists()
         assert result.audio_path.exists()
+
+    def test_stereo_preserves_channels(self, tmp_path):
+        """2-kanals input skapar separata kanalfiler + mono."""
+        sr = 16000
+        duration = 1.0
+        t = np.linspace(0, duration, int(sr * duration), endpoint=False, dtype=np.float32)
+        left = 0.5 * np.sin(2 * np.pi * 440 * t)
+        right = 0.3 * np.sin(2 * np.pi * 880 * t)
+        stereo = np.column_stack([left, right])
+
+        wav = tmp_path / "stereo_rec.wav"
+        sf.write(str(wav), stereo, sr)
+
+        result = preprocess_audio(wav, tmp_path / "out")
+
+        assert result.is_stereo_recording is True
+        assert result.channel_audio_paths is not None
+        assert len(result.channel_audio_paths) == 2
+
+        # Kanalfiler ska existera och vara mono
+        for ch_path in result.channel_audio_paths:
+            assert ch_path.exists()
+            data, ch_sr = sf.read(str(ch_path))
+            assert data.ndim == 1  # mono
+            assert ch_sr == 16000
+
+        # Mono-mixfilen ska också existera
+        assert result.audio_path.exists()
+        mono_data, _ = sf.read(str(result.audio_path))
+        assert mono_data.ndim == 1
+
+    def test_mono_no_channel_paths(self, tmp_path):
+        """1-kanals input → channel_audio_paths=None, is_stereo_recording=False."""
+        wav = tmp_path / "mono.wav"
+        _make_wav(wav, sr=16000, duration=0.5, channels=1)
+
+        result = preprocess_audio(wav, tmp_path / "out")
+
+        assert result.is_stereo_recording is False
+        assert result.channel_audio_paths is None
