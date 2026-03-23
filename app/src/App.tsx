@@ -25,7 +25,7 @@ const NAV_ITEMS: { id: View; label: string }[] = [
 const STORAGE_KEY = "motesskribent-settings";
 
 function loadSettingsForRecording(): PipelineSettings {
-  let model = "KBLab/kb-whisper-small";
+  let model = "KBLab/kb-whisper-base";
   let numSpeakers: number | null = null;
   let formats = ["markdown", "json"];
   let vadEnabled = true;
@@ -35,6 +35,11 @@ function loadSettingsForRecording(): PipelineSettings {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const s = JSON.parse(raw);
+      // Migrera gammal default small → base
+      if (s.defaultModel === "KBLab/kb-whisper-small") {
+        s.defaultModel = "KBLab/kb-whisper-base";
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+      }
       if (s.defaultModel) model = s.defaultModel;
       if (s.defaultNumSpeakers && s.defaultNumSpeakers !== "") {
         numSpeakers = parseInt(s.defaultNumSpeakers);
@@ -146,8 +151,9 @@ export default function App() {
     pipeline.start(filePath, settings);
   };
 
-  const handleRecordingComplete = async (filePath: string, settings: PipelineSettings, deviceName?: string) => {
-    let finalSettings = { ...settings, audioSource: deviceName ?? null };
+  const handleRecordingComplete = async (filePath: string, _settings: PipelineSettings, deviceName?: string) => {
+    const freshSettings = loadSettingsForRecording();
+    let finalSettings = { ...freshSettings, audioSource: deviceName ?? null };
     if (!finalSettings.outputDir) {
       const dir = await invoke<string>("get_default_output_dir");
       finalSettings = { ...finalSettings, outputDir: dir };
