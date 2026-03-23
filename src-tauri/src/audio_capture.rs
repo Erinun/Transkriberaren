@@ -33,6 +33,9 @@ pub struct RecordingResult {
 /// Shared handle that lets us signal the recording threads to stop.
 struct RecordingHandle {
     running: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
+    paused_duration: Arc<Mutex<f64>>,
+    pause_start: Arc<Mutex<Option<std::time::Instant>>>,
     writer: SharedWriter,
     #[allow(dead_code)]
     audio_level: Arc<AtomicU32>,
@@ -356,9 +359,14 @@ fn start_recording_single(
     let running = Arc::new(AtomicBool::new(true));
     let audio_level = Arc::new(AtomicU32::new(0u32));
 
+    let paused = Arc::new(AtomicBool::new(false));
+    let paused_duration = Arc::new(Mutex::new(0.0f64));
+    let pause_start: Arc<Mutex<Option<std::time::Instant>>> = Arc::new(Mutex::new(None));
+
     let writer_thread = writer.clone();
     let running_thread = running.clone();
     let audio_level_thread = audio_level.clone();
+    let paused_thread = paused.clone();
     let app_err = app.clone();
     let selection_clone = selection.clone();
     let return_name = device_name.clone();
@@ -467,6 +475,7 @@ fn start_recording_single(
         let writer_cb = writer_thread.clone();
         let running_cb = running_thread.clone();
         let audio_level_cb = audio_level_thread.clone();
+        let paused_cb = paused_thread.clone();
         let app_err2 = app_err.clone();
 
         let err_fn = move |err: cpal::StreamError| {
@@ -485,30 +494,37 @@ fn start_recording_single(
                     if !running_cb.load(Ordering::Relaxed) {
                         return;
                     }
-                    if let Ok(mut guard) = writer_cb.lock() {
-                        if let Some(ref mut w) = *guard {
-                            for frame in data.chunks(num_channels) {
-                                let mono: f32 =
-                                    frame.iter().sum::<f32>() / num_channels as f32;
-                                let sample = (mono * i16::MAX as f32)
-                                    .clamp(i16::MIN as f32, i16::MAX as f32)
-                                    as i16;
-                                if w.write_sample(sample).is_err() {
-                                    break;
+                    let is_paused = paused_cb.load(Ordering::Relaxed);
+                    if !is_paused {
+                        if let Ok(mut guard) = writer_cb.lock() {
+                            if let Some(ref mut w) = *guard {
+                                for frame in data.chunks(num_channels) {
+                                    let mono: f32 =
+                                        frame.iter().sum::<f32>() / num_channels as f32;
+                                    let sample = (mono * i16::MAX as f32)
+                                        .clamp(i16::MIN as f32, i16::MAX as f32)
+                                        as i16;
+                                    if w.write_sample(sample).is_err() {
+                                        break;
+                                    }
                                 }
                             }
                         }
                     }
-                    let frame_count = data.len() / num_channels;
-                    if frame_count > 0 {
-                        let sum_sq: f32 = data.chunks(num_channels)
-                            .map(|f| {
-                                let m: f32 = f.iter().sum::<f32>() / num_channels as f32;
-                                m * m
-                            })
-                            .sum();
-                        let rms = (sum_sq / frame_count as f32).sqrt();
-                        audio_level_cb.store(rms.to_bits(), Ordering::Relaxed);
+                    if is_paused {
+                        audio_level_cb.store(0u32, Ordering::Relaxed);
+                    } else {
+                        let frame_count = data.len() / num_channels;
+                        if frame_count > 0 {
+                            let sum_sq: f32 = data.chunks(num_channels)
+                                .map(|f| {
+                                    let m: f32 = f.iter().sum::<f32>() / num_channels as f32;
+                                    m * m
+                                })
+                                .sum();
+                            let rms = (sum_sq / frame_count as f32).sqrt();
+                            audio_level_cb.store(rms.to_bits(), Ordering::Relaxed);
+                        }
                     }
                 },
                 err_fn,
@@ -522,27 +538,34 @@ fn start_recording_single(
                         if !running_cb.load(Ordering::Relaxed) {
                             return;
                         }
-                        if let Ok(mut guard) = writer_cb.lock() {
-                            if let Some(ref mut w) = *guard {
-                                for frame in data.chunks(num_channels) {
-                                    let mono: i32 = frame.iter().map(|&s| s as i32).sum::<i32>()
-                                        / num_channels as i32;
-                                    if w.write_sample(mono as i16).is_err() {
-                                        break;
+                        let is_paused = paused_cb.load(Ordering::Relaxed);
+                        if !is_paused {
+                            if let Ok(mut guard) = writer_cb.lock() {
+                                if let Some(ref mut w) = *guard {
+                                    for frame in data.chunks(num_channels) {
+                                        let mono: i32 = frame.iter().map(|&s| s as i32).sum::<i32>()
+                                            / num_channels as i32;
+                                        if w.write_sample(mono as i16).is_err() {
+                                            break;
+                                        }
                                     }
                                 }
                             }
                         }
-                        let frame_count = data.len() / num_channels;
-                        if frame_count > 0 {
-                            let sum_sq: f32 = data.chunks(num_channels)
-                                .map(|f| {
-                                    let m: f32 = f.iter().map(|&s| s as f32 / 32768.0).sum::<f32>() / num_channels as f32;
-                                    m * m
-                                })
-                                .sum();
-                            let rms = (sum_sq / frame_count as f32).sqrt();
-                            audio_level_i16.store(rms.to_bits(), Ordering::Relaxed);
+                        if is_paused {
+                            audio_level_i16.store(0u32, Ordering::Relaxed);
+                        } else {
+                            let frame_count = data.len() / num_channels;
+                            if frame_count > 0 {
+                                let sum_sq: f32 = data.chunks(num_channels)
+                                    .map(|f| {
+                                        let m: f32 = f.iter().map(|&s| s as f32 / 32768.0).sum::<f32>() / num_channels as f32;
+                                        m * m
+                                    })
+                                    .sum();
+                                let rms = (sum_sq / frame_count as f32).sqrt();
+                                audio_level_i16.store(rms.to_bits(), Ordering::Relaxed);
+                            }
                         }
                     },
                     err_fn,
@@ -588,10 +611,13 @@ fn start_recording_single(
         }
     }));
 
-    spawn_tick_and_level_emitters(&running, &audio_level, &app);
+    spawn_tick_and_level_emitters(&running, &paused, &paused_duration, &pause_start, &audio_level, &app);
 
     *guard = Some(RecordingHandle {
         running,
+        paused,
+        paused_duration,
+        pause_start,
         writer,
         audio_level,
         mic_thread,
@@ -649,6 +675,9 @@ fn start_recording_mixed(
     let writer: SharedWriter = Arc::new(Mutex::new(Some(writer)));
 
     let running = Arc::new(AtomicBool::new(true));
+    let paused = Arc::new(AtomicBool::new(false));
+    let paused_duration = Arc::new(Mutex::new(0.0f64));
+    let pause_start: Arc<Mutex<Option<std::time::Instant>>> = Arc::new(Mutex::new(None));
     let audio_level = Arc::new(AtomicU32::new(0u32));
     let device_name = match &output_device_name {
         Some(name) => format!("Mikrofon + {}", name),
@@ -683,6 +712,7 @@ fn start_recording_mixed(
 
     // Mixer thread
     let running_mix = running.clone();
+    let paused_mix = paused.clone();
     let audio_level_mix = audio_level.clone();
     let writer_mix = writer.clone();
     let mic_consumer = Arc::new(Mutex::new(mic_consumer));
@@ -693,17 +723,21 @@ fn start_recording_mixed(
             loopback_consumer,
             writer_mix,
             running_mix,
+            paused_mix,
             audio_level_mix,
             mic_sample_rate,
             loopback_sample_rate,
         );
     }));
 
-    spawn_tick_and_level_emitters(&running, &audio_level, &app);
+    spawn_tick_and_level_emitters(&running, &paused, &paused_duration, &pause_start, &audio_level, &app);
 
     let return_name = device_name.clone();
     *guard = Some(RecordingHandle {
         running,
+        paused,
+        paused_duration,
+        pause_start,
         writer,
         audio_level,
         mic_thread,
@@ -716,11 +750,63 @@ fn start_recording_mixed(
     Ok(return_name)
 }
 
+pub fn pause_recording(state: &RecorderState) -> Result<(), String> {
+    let guard = state.inner.lock().map_err(|e| e.to_string())?;
+    let handle = guard
+        .as_ref()
+        .ok_or_else(|| "Ingen inspelning att pausa".to_string())?;
+
+    if handle.paused.load(Ordering::Relaxed) {
+        return Err("Inspelningen är redan pausad".to_string());
+    }
+
+    // Record when the pause started
+    if let Ok(mut ps) = handle.pause_start.lock() {
+        *ps = Some(std::time::Instant::now());
+    }
+    handle.paused.store(true, Ordering::Relaxed);
+    Ok(())
+}
+
+pub fn resume_recording(state: &RecorderState) -> Result<(), String> {
+    let guard = state.inner.lock().map_err(|e| e.to_string())?;
+    let handle = guard
+        .as_ref()
+        .ok_or_else(|| "Ingen inspelning att återuppta".to_string())?;
+
+    if !handle.paused.load(Ordering::Relaxed) {
+        return Err("Inspelningen är inte pausad".to_string());
+    }
+
+    // Accumulate time spent paused
+    if let Ok(mut ps) = handle.pause_start.lock() {
+        if let Some(start) = ps.take() {
+            if let Ok(mut pd) = handle.paused_duration.lock() {
+                *pd += start.elapsed().as_secs_f64();
+            }
+        }
+    }
+    handle.paused.store(false, Ordering::Relaxed);
+    Ok(())
+}
+
 pub fn stop_recording(state: &RecorderState) -> Result<RecordingResult, String> {
     let mut guard = state.inner.lock().map_err(|e| e.to_string())?;
     let mut handle = guard
         .take()
         .ok_or_else(|| "Ingen inspelning att stoppa".to_string())?;
+
+    // If stopped while paused, accumulate final pause duration
+    if handle.paused.load(Ordering::Relaxed) {
+        if let Ok(mut ps) = handle.pause_start.lock() {
+            if let Some(start) = ps.take() {
+                if let Ok(mut pd) = handle.paused_duration.lock() {
+                    *pd += start.elapsed().as_secs_f64();
+                }
+            }
+        }
+        handle.paused.store(false, Ordering::Relaxed);
+    }
 
     // Signal all threads to stop
     handle.running.store(false, Ordering::Relaxed);
@@ -755,10 +841,16 @@ pub fn stop_recording(state: &RecorderState) -> Result<RecordingResult, String> 
 
 fn spawn_tick_and_level_emitters(
     running: &Arc<AtomicBool>,
+    paused: &Arc<AtomicBool>,
+    paused_duration: &Arc<Mutex<f64>>,
+    pause_start: &Arc<Mutex<Option<std::time::Instant>>>,
     audio_level: &Arc<AtomicU32>,
     app: &AppHandle,
 ) {
     let running_tick = running.clone();
+    let paused_tick = paused.clone();
+    let paused_duration_tick = paused_duration.clone();
+    let pause_start_tick = pause_start.clone();
     let app_tick = app.clone();
     tokio::spawn(async move {
         let start = tokio::time::Instant::now();
@@ -768,7 +860,18 @@ fn spawn_tick_and_level_emitters(
             if !running_tick.load(Ordering::Relaxed) {
                 break;
             }
-            let elapsed = start.elapsed().as_secs_f64();
+            let total = start.elapsed().as_secs_f64();
+            let acc_paused = *paused_duration_tick.lock().unwrap_or_else(|e| e.into_inner());
+            let current_pause = if paused_tick.load(Ordering::Relaxed) {
+                pause_start_tick
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .map(|t| t.elapsed().as_secs_f64())
+                    .unwrap_or(0.0)
+            } else {
+                0.0
+            };
+            let elapsed = (total - acc_paused - current_pause).max(0.0);
             let _ = app_tick.emit("recording-tick", RecordingTick { elapsed_seconds: elapsed });
         }
     });
@@ -1096,6 +1199,7 @@ fn run_mixer_thread(
     loopback_consumer: SharedConsumer,
     writer: SharedWriter,
     running: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
     audio_level: Arc<AtomicU32>,
     mic_sample_rate: u32,
     loopback_sample_rate: u32,
@@ -1148,6 +1252,12 @@ fn run_mixer_thread(
         // If no data from either source, sleep briefly and retry
         if mic_read == 0 && lb_read == 0 {
             std::thread::sleep(std::time::Duration::from_millis(5));
+            continue;
+        }
+
+        // When paused: ringbuffers are drained above but we skip WAV writing
+        if paused.load(Ordering::Relaxed) {
+            audio_level.store(0u32, Ordering::Relaxed);
             continue;
         }
 

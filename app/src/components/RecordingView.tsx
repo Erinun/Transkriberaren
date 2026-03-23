@@ -108,8 +108,11 @@ function DeviceDropdown({
 export default function RecordingView({ onRecordingComplete, settings }: Props) {
   const recorder = useRecorder();
   const audioDevices = useAudioDevices();
-  const levels = useAudioLevel(recorder.status === "recording");
+  const levels = useAudioLevel(recorder.status === "recording" || recorder.status === "paused");
   const [showInfo, setShowInfo] = useState(false);
+
+  const isActive = recorder.status === "recording" || recorder.status === "paused";
+  const isPaused = recorder.status === "paused";
 
   const handleStart = async () => {
     await recorder.start(audioDevices.selectedDeviceId);
@@ -122,26 +125,40 @@ export default function RecordingView({ onRecordingComplete, settings }: Props) 
     }
   };
 
+  const handlePauseResume = async () => {
+    if (isPaused) {
+      await recorder.resume();
+    } else {
+      await recorder.pause();
+    }
+  };
+
   return (
     <div className="max-w-md mx-auto mt-16 text-center space-y-6 animate-fade-in">
       {/* Microphone icon */}
       <div
         className={`w-20 h-20 mx-auto rounded-full flex items-center justify-center glass transition-all ${
-          recorder.status === "recording"
-            ? "border-[var(--color-error)]"
-            : ""
+          isPaused
+            ? "border-yellow-400"
+            : isActive
+              ? "border-[var(--color-error)]"
+              : ""
         }`}
         style={
-          recorder.status === "recording"
-            ? { boxShadow: "0 0 24px rgba(239, 68, 68, 0.3)" }
-            : {}
+          isPaused
+            ? { boxShadow: "0 0 24px rgba(234, 179, 8, 0.3)" }
+            : isActive
+              ? { boxShadow: "0 0 24px rgba(239, 68, 68, 0.3)" }
+              : {}
         }
       >
         <svg
           className={`w-10 h-10 ${
-            recorder.status === "recording"
-              ? "text-[var(--color-error)]"
-              : "text-[var(--color-text-muted)]"
+            isPaused
+              ? "text-yellow-400"
+              : isActive
+                ? "text-[var(--color-error)]"
+                : "text-[var(--color-text-muted)]"
           }`}
           fill="none"
           viewBox="0 0 24 24"
@@ -156,15 +173,26 @@ export default function RecordingView({ onRecordingComplete, settings }: Props) 
         </svg>
       </div>
 
-      {recorder.status === "recording" ? (
+      {isActive ? (
         <>
-          {/* REC indicator + timer */}
+          {/* REC / PAUSAD indicator + timer */}
           <div className="space-y-2">
             <div className="flex items-center justify-center gap-2">
-              <span className="animate-pulse-rec w-3 h-3 rounded-full bg-[var(--color-error)] inline-block" />
-              <span className="text-sm font-medium text-[var(--color-error)] uppercase tracking-wider">
-                REC
-              </span>
+              {isPaused ? (
+                <>
+                  <span className="w-3 h-3 rounded-full bg-yellow-400 inline-block" />
+                  <span className="text-sm font-medium text-yellow-400 uppercase tracking-wider">
+                    Pausad
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="animate-pulse-rec w-3 h-3 rounded-full bg-[var(--color-error)] inline-block" />
+                  <span className="text-sm font-medium text-[var(--color-error)] uppercase tracking-wider">
+                    REC
+                  </span>
+                </>
+              )}
             </div>
             <p className="text-4xl font-mono font-semibold tabular-nums">
               {formatTime(recorder.elapsedSeconds)}
@@ -177,15 +205,27 @@ export default function RecordingView({ onRecordingComplete, settings }: Props) 
             )}
           </div>
 
-          {/* Stop button */}
-          <button
-            onClick={handleStop}
-            disabled={recorder.status !== "recording"}
-            className="px-6 py-3 rounded-lg bg-[var(--color-error)] hover:bg-[var(--color-error)]/80 text-white font-medium text-sm transition-all"
-            style={{ boxShadow: "0 0 20px rgba(239, 68, 68, 0.25)" }}
-          >
-            Stoppa inspelning
-          </button>
+          {/* Pause/Resume + Stop buttons */}
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={handlePauseResume}
+              className={`px-5 py-3 rounded-lg font-medium text-sm transition-all ${
+                isPaused
+                  ? "bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white"
+                  : "glass text-[var(--color-text)] hover:bg-white/10"
+              }`}
+              style={isPaused ? { boxShadow: "0 0 20px rgba(37, 99, 235, 0.25)" } : {}}
+            >
+              {isPaused ? "Återuppta" : "Pausa"}
+            </button>
+            <button
+              onClick={handleStop}
+              className="px-5 py-3 rounded-lg bg-[var(--color-error)] hover:bg-[var(--color-error)]/80 text-white font-medium text-sm transition-all"
+              style={{ boxShadow: "0 0 20px rgba(239, 68, 68, 0.25)" }}
+            >
+              Stoppa
+            </button>
+          </div>
         </>
       ) : (
         <>

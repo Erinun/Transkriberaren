@@ -6,7 +6,7 @@ mod sidecar;
 mod sidecar_manager;
 
 use audio_capture::RecorderState;
-use commands::{copy_file_to, get_default_output_dir, list_audio_devices, ollama_check_health, ollama_generate, ollama_list_models, open_file, read_file_content, run_transcription, set_meeting_detection, start_recording, stop_recording, write_text_to_file};
+use commands::{copy_file_to, get_default_output_dir, list_audio_devices, ollama_check_health, ollama_generate, ollama_list_models, open_file, pause_recording, read_file_content, resume_recording, run_transcription, set_meeting_detection, start_recording, stop_recording, write_text_to_file};
 use meeting_detector::MeetingDetector;
 use sidecar_manager::SidecarManager;
 use tauri::{Emitter, Manager};
@@ -105,6 +105,8 @@ pub fn run() {
             list_audio_devices,
             start_recording,
             stop_recording,
+            pause_recording,
+            resume_recording,
             read_file_content,
             copy_file_to,
             write_text_to_file,

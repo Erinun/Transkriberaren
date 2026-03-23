@@ -84,6 +84,20 @@ pub async fn stop_recording(
 }
 
 #[tauri::command]
+pub async fn pause_recording(
+    state: State<'_, RecorderState>,
+) -> Result<(), String> {
+    audio_capture::pause_recording(&state)
+}
+
+#[tauri::command]
+pub async fn resume_recording(
+    state: State<'_, RecorderState>,
+) -> Result<(), String> {
+    audio_capture::resume_recording(&state)
+}
+
+#[tauri::command]
 pub async fn read_file_content(path: String) -> Result<String, String> {
     tokio::fs::read_to_string(&path)
         .await

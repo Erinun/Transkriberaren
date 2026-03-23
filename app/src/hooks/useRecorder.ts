@@ -7,7 +7,7 @@ export interface RecordingResult {
   device_name: string;
 }
 
-type RecorderStatus = "idle" | "recording" | "stopping";
+type RecorderStatus = "idle" | "recording" | "paused" | "stopping";
 
 interface RecorderState {
   status: RecorderStatus;
@@ -86,6 +86,26 @@ export function useRecorder() {
     }
   }, []);
 
+  const pause = useCallback(async () => {
+    try {
+      await invoke("pause_recording");
+      setState((s) => ({ ...s, status: "paused" }));
+    } catch (err: any) {
+      const msg = typeof err === "string" ? err : err.message ?? "";
+      setState((s) => ({ ...s, error: msg || "Kunde inte pausa" }));
+    }
+  }, []);
+
+  const resume = useCallback(async () => {
+    try {
+      await invoke("resume_recording");
+      setState((s) => ({ ...s, status: "recording" }));
+    } catch (err: any) {
+      const msg = typeof err === "string" ? err : err.message ?? "";
+      setState((s) => ({ ...s, error: msg || "Kunde inte återuppta" }));
+    }
+  }, []);
+
   const stop = useCallback(async (): Promise<RecordingResult | null> => {
     setState((s) => ({ ...s, status: "stopping" }));
     try {
@@ -108,5 +128,5 @@ export function useRecorder() {
     }
   }, []);
 
-  return { ...state, start, stop };
+  return { ...state, start, stop, pause, resume };
 }
