@@ -84,7 +84,7 @@ pub fn run() {
 
                 let _ = handle.emit("sidecar-status", "warming_up");
 
-                match sidecar.warmup(&handle).await {
+                match sidecar.warmup(&handle, "KBLab/kb-whisper-base").await {
                     Ok(diarization_available) => {
                         log::info!("Sidecar warmup klar, diarization: {}", diarization_available);
                         let _ = handle.emit("sidecar-status", "ready");

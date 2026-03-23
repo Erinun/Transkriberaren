@@ -33,6 +33,7 @@ def preprocess_audio(
     min_speech_duration: float = 0.5,
     min_silence_duration: float = 0.8,
     padding: float = 0.3,
+    compute_vad_stats: bool = True,
 ) -> PreprocessedAudio:
     """Konvertera ljud till 16kHz mono WAV och beräkna VAD-statistik.
 
@@ -93,28 +94,31 @@ def preprocess_audio(
     audio_np = waveform.squeeze(0).numpy()
     sf.write(str(output_path), audio_np, target_sr)
 
-    # 6. Kör VAD för statistik
-    duration_speech = 0.0
-    try:
-        from faster_whisper.vad import VadOptions, get_speech_timestamps
+    # 6. Kör VAD för statistik (kan hoppas över för snabbhet)
+    if compute_vad_stats:
+        duration_speech = 0.0
+        try:
+            from faster_whisper.vad import VadOptions, get_speech_timestamps
 
-        vad_opts = VadOptions(
-            threshold=vad_threshold,
-            min_speech_duration_ms=int(min_speech_duration * 1000),
-            min_silence_duration_ms=int(min_silence_duration * 1000),
-            speech_pad_ms=int(padding * 1000),
-        )
+            vad_opts = VadOptions(
+                threshold=vad_threshold,
+                min_speech_duration_ms=int(min_speech_duration * 1000),
+                min_silence_duration_ms=int(min_silence_duration * 1000),
+                speech_pad_ms=int(padding * 1000),
+            )
 
-        audio_for_vad = waveform.squeeze(0).numpy()
-        timestamps = get_speech_timestamps(audio_for_vad, vad_opts)
+            audio_for_vad = waveform.squeeze(0).numpy()
+            timestamps = get_speech_timestamps(audio_for_vad, vad_opts)
 
-        for ts in timestamps:
-            start_sec = ts["start"] / target_sr
-            end_sec = ts["end"] / target_sr
-            duration_speech += end_sec - start_sec
+            for ts in timestamps:
+                start_sec = ts["start"] / target_sr
+                end_sec = ts["end"] / target_sr
+                duration_speech += end_sec - start_sec
 
-    except Exception:
-        logger.warning("VAD misslyckades, hoppar över statistik", exc_info=True)
+        except Exception:
+            logger.warning("VAD misslyckades, hoppar över statistik", exc_info=True)
+            duration_speech = duration_original
+    else:
         duration_speech = duration_original
 
     silence_removed_pct = 0.0

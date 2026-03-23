@@ -409,14 +409,14 @@ impl SidecarManager {
     }
 
     /// Warm up models in the sidecar. Returns whether diarization is available.
-    pub async fn warmup(&self, app: &AppHandle) -> Result<bool, String> {
+    pub async fn warmup(&self, app: &AppHandle, model: &str) -> Result<bool, String> {
         let req_id = Uuid::new_v4().to_string();
 
         let cmd = serde_json::json!({
             "request_id": req_id,
             "command": "warmup",
             "config": {
-                "model": "KBLab/kb-whisper-small",
+                "model": model,
                 "num_speakers": null
             }
         });

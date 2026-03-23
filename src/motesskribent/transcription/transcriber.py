@@ -13,6 +13,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from faster_whisper import BatchedInferencePipeline, WhisperModel
 
@@ -226,6 +227,27 @@ def _resolve_model_path(model_path: Path | str) -> Path | str:
     return snapshot_dir
 
 
+def _compute_threading(cpu_threads: int | None = None) -> tuple[int, int]:
+    """Beräkna cpu_threads (intra) och num_workers (inter) baserat på antal kärnor.
+
+    På system med 8+ kärnor används 2 workers för parallell batch-avkodning.
+    cpu_threads justeras så att inter * intra <= fysiska kärnor * 3/4.
+
+    Returns:
+        (cpu_threads, num_workers)
+    """
+    cores = os.cpu_count() or 4
+    if cpu_threads is not None:
+        return cpu_threads, 1
+    if cores >= 8:
+        num_workers = 2
+        cpu_threads = max(1, (cores * 3 // 4) // num_workers)
+    else:
+        num_workers = 1
+        cpu_threads = max(1, (cores * 3) // 4)
+    return cpu_threads, num_workers
+
+
 def _get_model(
     model_path: Path | str,
     compute_type: str = "int8",
@@ -239,10 +261,9 @@ def _get_model(
     """
     global _cached_model, _cached_model_key
 
-    if cpu_threads is None:
-        cpu_threads = max(1, ((os.cpu_count() or 4) * 3) // 4)
+    cpu_threads, num_workers = _compute_threading(cpu_threads)
 
-    key = (str(model_path), compute_type, cpu_threads)
+    key = (str(model_path), compute_type, cpu_threads, num_workers)
 
     if _cached_model is not None and _cached_model_key == key:
         logger.debug("Använder cachad modell: %s", key)
@@ -251,8 +272,8 @@ def _get_model(
     resolved = _resolve_model_path(model_path)
 
     logger.info(
-        "Laddar modell: path=%s, compute_type=%s, cpu_threads=%d",
-        resolved, compute_type, cpu_threads,
+        "Laddar modell: path=%s, compute_type=%s, cpu_threads=%d, num_workers=%d",
+        resolved, compute_type, cpu_threads, num_workers,
     )
     try:
         model = WhisperModel(
@@ -260,6 +281,7 @@ def _get_model(
             device="cpu",
             compute_type=compute_type,
             cpu_threads=cpu_threads,
+            num_workers=num_workers,
         )
     except Exception as e:
         if isinstance(e, ModelResolutionError):
@@ -288,10 +310,9 @@ def _get_batched_pipeline(
     """Hämta eller skapa en cachad BatchedInferencePipeline."""
     global _cached_batched, _cached_batched_key
 
-    if cpu_threads is None:
-        cpu_threads = max(1, ((os.cpu_count() or 4) * 3) // 4)
+    cpu_threads, num_workers = _compute_threading(cpu_threads)
 
-    key = (str(model_path), compute_type, cpu_threads)
+    key = (str(model_path), compute_type, cpu_threads, num_workers)
 
     if _cached_batched is not None and _cached_batched_key == key:
         logger.debug("Använder cachad batched pipeline: %s", key)
@@ -307,7 +328,7 @@ def _get_batched_pipeline(
 
 def transcribe(
     audio_path: Path | str,
-    model_path: Path | str = "KBLab/kb-whisper-small",
+    model_path: Path | str = "KBLab/kb-whisper-base",
     language: str = "sv",
     beam_size: int = 1,
     cpu_threads: int | None = None,
@@ -316,6 +337,7 @@ def transcribe(
     initial_prompt: str | None = None,
     vad_filter: bool = True,
     batch_size: int = 16,
+    progress_callback: Callable[[int, float, float], None] | None = None,
 ) -> TranscriptionResult:
     """
     Transkribera en ljudfil med faster-whisper och KB-Whisper.
@@ -323,7 +345,7 @@ def transcribe(
     Args:
         audio_path: Sökväg till ljudfil (WAV, MP3, etc.)
         model_path: HuggingFace-ID eller lokal sökväg till CTranslate2-modell.
-                     Default: "KBLab/kb-whisper-small" (auto-download).
+                     Default: "KBLab/kb-whisper-base" (auto-download).
         language: Språkkod (default "sv" för svenska).
         beam_size: Beam search-bredd (default 1, greedy decoding).
         cpu_threads: Antal CPU-trådar (default: os.cpu_count() * 3/4).
@@ -390,6 +412,9 @@ def transcribe(
             end=seg.end,
             words=words,
         ))
+
+        if progress_callback is not None:
+            progress_callback(len(segments), seg.end, info.duration)
 
     elapsed = time.perf_counter() - start_time
 

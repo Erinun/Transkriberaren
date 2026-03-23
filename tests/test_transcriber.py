@@ -1,5 +1,6 @@
 """Tester för transcriber-modulen."""
 
+import inspect
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from motesskribent.transcription.transcriber import (
     TranscribedWord,
     TranscriptionResult,
     _resolve_model_path,
+    transcribe,
 )
 
 # Sökväg till test-WAV (placera i tests/fixtures/)
@@ -223,3 +225,18 @@ class TestResolveModelPathOffline:
         monkeypatch.delenv("HF_HUB_CACHE", raising=False)
         result = _resolve_model_path("KBLab/kb-whisper-small")
         assert result == "KBLab/kb-whisper-small"
+
+
+class TestTranscribeProgressCallback:
+    """Tester för progress_callback-parametern i transcribe()."""
+
+    def test_transcribe_accepts_progress_callback(self):
+        """Verifiera att transcribe() accepterar progress_callback som parameter."""
+        sig = inspect.signature(transcribe)
+        assert "progress_callback" in sig.parameters
+
+    def test_progress_callback_default_is_none(self):
+        """progress_callback ska ha None som default."""
+        sig = inspect.signature(transcribe)
+        param = sig.parameters["progress_callback"]
+        assert param.default is None

@@ -17,6 +17,8 @@ from motesskribent import __version__
 console = Console()
 
 KNOWN_MODELS = [
+    ("KBLab/kb-whisper-tiny", "tiny", "~160 MB", "Snabbast, bra kvalitet"),
+    ("KBLab/kb-whisper-base", "base", "~240 MB", "Snabb, mycket bra kvalitet (rekommenderas)"),
     ("KBLab/kb-whisper-small", "small", "~460 MB", "Bra balans hastighet/kvalitet"),
     ("KBLab/kb-whisper-medium", "medium", "~1.5 GB", "Bättre kvalitet, långsammare"),
     ("KBLab/kb-whisper-large", "large", "~3 GB", "Bästa kvalitet, kräver mer minne"),
@@ -99,7 +101,7 @@ def _run_json_ipc(audio_file: Path, config):
 
 @main.command()
 @click.argument("audio_file", type=click.Path(exists=True, path_type=Path))
-@click.option("--modell", default="KBLab/kb-whisper-small", help="Whisper-modell att använda.")
+@click.option("--modell", default="KBLab/kb-whisper-base", help="Whisper-modell att använda.")
 @click.option("--talare", type=int, default=None, help="Antal talare (auto om ej angivet).")
 @click.option("--format", "formats", multiple=True, default=["markdown", "json"],
               help="Outputformat (markdown, json).")

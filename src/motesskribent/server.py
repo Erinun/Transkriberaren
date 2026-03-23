@@ -32,7 +32,7 @@ def _handle_warmup(request_id: str, config: dict) -> None:
     """Load models into memory. Parallelizes whisper + diarize loading."""
     from motesskribent.transcription.transcriber import ModelResolutionError
 
-    model = config.get("model", "KBLab/kb-whisper-small")
+    model = config.get("model", "KBLab/kb-whisper-base")
     num_speakers = config.get("num_speakers")
     need_diarizer = num_speakers is None or num_speakers > 1
 
@@ -98,7 +98,7 @@ def _handle_transcribe(request_id: str, audio_path: str, config: dict) -> None:
     from motesskribent.pipeline import PipelineConfig, run_pipeline
 
     pipeline_config = PipelineConfig(
-        model_path=config.get("model", "KBLab/kb-whisper-small"),
+        model_path=config.get("model", "KBLab/kb-whisper-base"),
         num_speakers=config.get("num_speakers"),
         output_dir=Path(config.get("output_dir", "output")),
         output_formats=config.get("formats", ["markdown", "json"]),

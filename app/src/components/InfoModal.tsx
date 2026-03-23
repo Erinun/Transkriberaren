@@ -40,7 +40,7 @@ const SECTIONS = [
       </svg>
     ),
     title: "Modeller",
-    body: "Small (~460 MB) — snabbast, bra balans mellan hastighet och kvalitet. Medium (~1.5 GB) — bättre noggrannhet, tar längre tid. Large (~3 GB) — bäst kvalitet, kräver mest resurser. Alla modeller baseras på KB-Whisper, optimerade för svenska.",
+    body: "Tiny (~160 MB) — snabbast, bra kvalitet. Base (~240 MB) — rekommenderas, mycket bra kvalitet och ~2x snabbare än Small. Small (~460 MB) — bra balans hastighet/kvalitet. Medium (~1.5 GB) — bättre noggrannhet, tar längre tid. Large (~3 GB) — bäst kvalitet, kräver mest resurser. Alla modeller baseras på KB-Whisper, optimerade för svenska.",
   },
   {
     icon: (

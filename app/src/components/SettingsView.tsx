@@ -17,10 +17,18 @@ const STORAGE_KEY = "motesskribent-settings";
 function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // Migrera gammal default small → base
+      if (parsed.defaultModel === "KBLab/kb-whisper-small") {
+        parsed.defaultModel = "KBLab/kb-whisper-base";
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+      }
+      return parsed;
+    }
   } catch {}
   return {
-    defaultModel: "KBLab/kb-whisper-small",
+    defaultModel: "KBLab/kb-whisper-base",
     defaultNumSpeakers: "",
     defaultFormats: { markdown: true, json: true, docx: false },
     vadEnabled: true,
@@ -134,6 +142,8 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
           onChange={(e) => update("defaultModel", e.target.value)}
           className="w-full px-3 py-2 rounded-lg glass-input text-sm"
         >
+          <option value="KBLab/kb-whisper-tiny">Tiny (~160 MB) — snabbast</option>
+          <option value="KBLab/kb-whisper-base">Base (~240 MB) — rekommenderas</option>
           <option value="KBLab/kb-whisper-small">Small (~460 MB)</option>
           <option value="KBLab/kb-whisper-medium">Medium (~1.5 GB)</option>
           <option value="KBLab/kb-whisper-large">Large (~3 GB)</option>

@@ -17,7 +17,7 @@ ProgressCallback = Callable[[str, float], None]
 
 
 SPEED_PROFILES = {
-    "fast": {"beam_size": 1, "batch_size": 24},
+    "fast": {"beam_size": 1, "batch_size": 32, "word_timestamps": False},
     "balanced": {"beam_size": 1, "batch_size": 16},
     "quality": {"beam_size": 5, "batch_size": 8},
 }
@@ -26,7 +26,7 @@ SPEED_PROFILES = {
 @dataclass
 class PipelineConfig:
     """Konfiguration för transkriberingspipelinen."""
-    model_path: Path | str = "KBLab/kb-whisper-small"
+    model_path: Path | str = "KBLab/kb-whisper-base"
     language: str = "sv"
     compute_type: str = "int8"
     cpu_threads: int | None = None
@@ -117,11 +117,13 @@ def run_pipeline(
     if not audio_path.exists():
         raise FileNotFoundError(f"Ljudfilen finns inte: {audio_path}")
 
-    # Resolve speed profile → beam_size / batch_size
+    # Resolve speed profile → beam_size / batch_size / word_timestamps
     if config.speed_profile in SPEED_PROFILES:
         profile = SPEED_PROFILES[config.speed_profile]
         config.beam_size = profile["beam_size"]
         config.batch_size = profile["batch_size"]
+        if "word_timestamps" in profile:
+            config.include_word_timestamps = profile["word_timestamps"]
 
     config.output_dir = Path(config.output_dir)
     config.output_dir.mkdir(parents=True, exist_ok=True)
@@ -135,7 +137,11 @@ def run_pipeline(
 
     # 1. Förbehandling
     t0 = time.perf_counter()
-    preprocessed = preprocess_audio(audio_path, config.output_dir / "temp")
+    skip_vad = config.speed_profile == "fast"
+    preprocessed = preprocess_audio(
+        audio_path, config.output_dir / "temp",
+        compute_vad_stats=not skip_vad,
+    )
     breakdown["preprocessing"] = time.perf_counter() - t0
     _progress("preprocessing", 0.05)
 
@@ -179,6 +185,22 @@ def run_pipeline(
             warnings.append("Talarseparering ej tillgänglig")
         return time.perf_counter() - t
 
+    # Throttled transcription progress: emit max once per percentage point
+    _last_pct = [-1]  # mutable container for closure
+    diarization_done = [False]
+
+    def _on_transcription_progress(segment_index: int, segment_end: float, audio_duration: float):
+        if not diarization_done[0]:
+            return
+        if audio_duration <= 0:
+            return
+        fraction = min(segment_end / audio_duration, 1.0)
+        mapped = 0.35 + fraction * 0.55  # map 0.0-1.0 → 0.35-0.90
+        pct = int(mapped * 100)
+        if pct > _last_pct[0]:
+            _last_pct[0] = pct
+            _progress("transcription", mapped)
+
     def _run_transcription():
         nonlocal trans_result
         t = time.perf_counter()
@@ -194,12 +216,14 @@ def run_pipeline(
             initial_prompt=config.initial_prompt,
             vad_filter=config.vad_enabled,
             batch_size=config.batch_size,
+            progress_callback=_on_transcription_progress,
         )
         return time.perf_counter() - t
 
     if skip_diarization or use_channel_diarization:
         breakdown["diarization"] = _run_diarization()
         _progress("diarization", 0.35)
+        diarization_done[0] = True
         breakdown["transcription"] = _run_transcription()
     else:
         with ThreadPoolExecutor(max_workers=2) as pool:
@@ -209,6 +233,7 @@ def run_pipeline(
             # Diarization typically finishes first — report progress as it completes
             breakdown["diarization"] = diar_future.result()
             _progress("diarization", 0.35)
+            diarization_done[0] = True
 
             breakdown["transcription"] = trans_future.result()
 

@@ -93,7 +93,7 @@ class TestPipelineConfig:
 
     def test_defaults(self):
         cfg = PipelineConfig()
-        assert cfg.model_path == "KBLab/kb-whisper-small"
+        assert cfg.model_path == "KBLab/kb-whisper-base"
         assert cfg.language == "sv"
         assert cfg.compute_type == "int8"
         assert cfg.beam_size == 1
@@ -146,19 +146,22 @@ class TestSpeedProfiles:
         cfg = PipelineConfig(speed_profile="fast")
         profile = SPEED_PROFILES["fast"]
         assert profile["beam_size"] == 1
-        assert profile["batch_size"] == 24
+        assert profile["batch_size"] == 32
+        assert profile["word_timestamps"] is False
 
     def test_balanced_profile(self):
         cfg = PipelineConfig(speed_profile="balanced")
         profile = SPEED_PROFILES["balanced"]
         assert profile["beam_size"] == 1
         assert profile["batch_size"] == 16
+        assert "word_timestamps" not in profile
 
     def test_quality_profile(self):
         cfg = PipelineConfig(speed_profile="quality")
         profile = SPEED_PROFILES["quality"]
         assert profile["beam_size"] == 5
         assert profile["batch_size"] == 8
+        assert "word_timestamps" not in profile
 
     def test_all_profiles_have_required_keys(self):
         for name, profile in SPEED_PROFILES.items():

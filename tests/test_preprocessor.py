@@ -135,3 +135,23 @@ class TestPreprocessAudio:
 
         assert result.is_stereo_recording is False
         assert result.channel_audio_paths is None
+
+    def test_compute_vad_stats_false_skips_vad(self, tmp_path):
+        """Med compute_vad_stats=False ska duration_speech == duration_original."""
+        sr = 16000
+        duration = 3.0
+        t = np.linspace(0, duration, int(sr * duration), endpoint=False, dtype=np.float32)
+        signal = np.zeros_like(t)
+        # Första sekunden: sinusvåg, resten tystnad
+        speech_end = int(sr * 1.0)
+        signal[:speech_end] = 0.5 * np.sin(2 * np.pi * 440 * t[:speech_end])
+
+        wav = tmp_path / "partial_speech.wav"
+        sf.write(str(wav), signal, sr)
+
+        result = preprocess_audio(wav, tmp_path / "out", compute_vad_stats=False)
+
+        # Utan VAD ska duration_speech == duration_original
+        assert result.duration_speech == pytest.approx(result.duration_original, abs=0.01)
+        assert result.silence_removed_pct == pytest.approx(0.0, abs=0.01)
+        assert result.audio_path.exists()

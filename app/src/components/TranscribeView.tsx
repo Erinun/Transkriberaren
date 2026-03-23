@@ -12,6 +12,8 @@ interface Props {
 }
 
 const MODELS = [
+  { id: "KBLab/kb-whisper-tiny", label: "Tiny (~160 MB)", desc: "Snabbast" },
+  { id: "KBLab/kb-whisper-base", label: "Base (~240 MB)", desc: "Rekommenderas" },
   { id: "KBLab/kb-whisper-small", label: "Small (~460 MB)", desc: "Bra balans" },
   { id: "KBLab/kb-whisper-medium", label: "Medium (~1.5 GB)", desc: "Bättre kvalitet" },
   { id: "KBLab/kb-whisper-large", label: "Large (~3 GB)", desc: "Bäst kvalitet" },
@@ -28,7 +30,7 @@ const SETTINGS_KEY = "motesskribent-settings";
 
 function loadDefaultSettings() {
   const defaults = {
-    model: "KBLab/kb-whisper-small",
+    model: "KBLab/kb-whisper-base",
     numSpeakers: "",
     formats: { markdown: true, json: true, docx: false },
     vadEnabled: true,
@@ -38,6 +40,11 @@ function loadDefaultSettings() {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (raw) {
       const s = JSON.parse(raw);
+      // Migrera gammal default small → base
+      if (s.defaultModel === "KBLab/kb-whisper-small") {
+        s.defaultModel = "KBLab/kb-whisper-base";
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+      }
       if (s.defaultModel) defaults.model = s.defaultModel;
       if (s.defaultNumSpeakers) defaults.numSpeakers = s.defaultNumSpeakers;
       if (s.defaultFormats) defaults.formats = { ...defaults.formats, ...s.defaultFormats };
