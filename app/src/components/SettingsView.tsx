@@ -15,6 +15,13 @@ interface Settings {
 const STORAGE_KEY = "motesskribent-settings";
 
 function loadSettings(): Settings {
+  const defaults: Settings = {
+    defaultModel: "KBLab/kb-whisper-base",
+    defaultNumSpeakers: "",
+    defaultFormats: { markdown: true, json: true, docx: false },
+    vadEnabled: true,
+    defaultSpeedProfile: "balanced",
+  };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
@@ -24,16 +31,14 @@ function loadSettings(): Settings {
         parsed.defaultModel = "KBLab/kb-whisper-base";
         localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
       }
-      return parsed;
+      return {
+        ...defaults,
+        ...parsed,
+        defaultFormats: { ...defaults.defaultFormats, ...parsed.defaultFormats },
+      };
     }
   } catch {}
-  return {
-    defaultModel: "KBLab/kb-whisper-base",
-    defaultNumSpeakers: "",
-    defaultFormats: { markdown: true, json: true, docx: false },
-    vadEnabled: true,
-    defaultSpeedProfile: "balanced",
-  };
+  return defaults;
 }
 
 function saveSettings(s: Settings) {
