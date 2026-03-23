@@ -17,8 +17,8 @@ type View = "dashboard" | "transcribe" | "processing" | "result" | "settings" | 
 type SidecarStatus = "starting" | "warming_up" | "ready" | "error";
 
 const NAV_ITEMS: { id: View; label: string }[] = [
-  { id: "transcribe", label: "Transkribera" },
   { id: "recording", label: "Spela in" },
+  { id: "transcribe", label: "Transkribera" },
   { id: "settings", label: "Inställningar" },
 ];
 
