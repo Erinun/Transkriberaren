@@ -151,13 +151,10 @@ export default function App() {
     pipeline.start(filePath, settings);
   };
 
-  const handleRecordingComplete = async (filePath: string, _settings: PipelineSettings, deviceName?: string) => {
+  const handleRecordingComplete = async (filePath: string, settings: PipelineSettings, deviceName?: string) => {
     const freshSettings = loadSettingsForRecording();
-    let finalSettings = { ...freshSettings, audioSource: deviceName ?? null };
-    if (!finalSettings.outputDir) {
-      const dir = await invoke<string>("get_default_output_dir");
-      finalSettings = { ...finalSettings, outputDir: dir };
-    }
+    const outputDir = settings.outputDir || await invoke<string>("get_default_output_dir");
+    let finalSettings = { ...freshSettings, outputDir, audioSource: deviceName ?? null };
     const name = filePath.split(/[\\/]/).pop() ?? filePath;
     setCurrentAudioName(name);
     setViewingHistory(null);
