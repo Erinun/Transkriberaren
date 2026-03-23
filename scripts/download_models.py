@@ -52,36 +52,45 @@ def main():
     print(f"Cache-katalog: {CACHE_DIR}")
     print()
 
-    # 1. KB-Whisper (CTranslate2 format, ~500 MB) — public, no token needed
+    # 1. KB-Whisper models (CTranslate2 format) — public, no token needed
     #    Only download files needed by faster-whisper (CTranslate2 format).
     #    Skip PyTorch, SafeTensors, GGML, ONNX variants (~8 GB savings).
-    print("[1/3] Laddar ned KBLab/kb-whisper-small (enbart CTranslate2) ...")
-    snapshot_download(
-        "KBLab/kb-whisper-small",
-        cache_dir=CACHE_DIR,
-        allow_patterns=[
-            "config.json",
-            "model.bin",
-            "tokenizer.json",
-            "vocabulary.*",
-            "preprocessor_config.json",
-            "special_tokens_map.json",
-            "added_tokens.json",
-            "README.md",
-        ],
-        ignore_patterns=[
-            "*.safetensors",
-            "*.gguf",
-            "ggml-*",
-            "onnx/*",
-            "onnx/**",
-            "flax_model*",
-            "tf_model*",
-            "opus-mt-*",
-            "pytorch_model*",
-        ],
-    )
-    print("  OK")
+    #    Downloads: tiny (~160 MB), base (~240 MB), small (~460 MB)
+    whisper_models = [
+        ("KBLab/kb-whisper-tiny", "tiny"),
+        ("KBLab/kb-whisper-base", "base"),
+        ("KBLab/kb-whisper-small", "small"),
+    ]
+    allow = [
+        "config.json",
+        "model.bin",
+        "tokenizer.json",
+        "vocabulary.*",
+        "preprocessor_config.json",
+        "special_tokens_map.json",
+        "added_tokens.json",
+        "README.md",
+    ]
+    ignore = [
+        "*.safetensors",
+        "*.gguf",
+        "ggml-*",
+        "onnx/*",
+        "onnx/**",
+        "flax_model*",
+        "tf_model*",
+        "opus-mt-*",
+        "pytorch_model*",
+    ]
+    for i, (repo_id, label) in enumerate(whisper_models, 1):
+        print(f"[1.{i}/3] Laddar ned {repo_id} (enbart CTranslate2) ...")
+        snapshot_download(
+            repo_id,
+            cache_dir=CACHE_DIR,
+            allow_patterns=allow,
+            ignore_patterns=ignore,
+        )
+        print("  OK")
 
     # 2. Diarize-modeller (Silero VAD + WeSpeaker ONNX)
     #    - Silero VAD: bundlad i silero_vad-paketet (importlib.resources), ingen nedladdning behövs.

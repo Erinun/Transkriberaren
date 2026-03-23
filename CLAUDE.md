@@ -82,7 +82,7 @@ Both transcriber and diarizer cache their models at module level to avoid reload
 ## Conventions
 
 - src-layout: all source under `src/motesskribent/`
-- All user-facing strings in Swedish; default language "sv", default model "KBLab/kb-whisper-small"
+- All user-facing strings in Swedish; default language "sv", default model "KBLab/kb-whisper-base"
 - Integration tests use `@pytest.mark.skipif` when fixtures/models are missing
 - Test audio generated synthetically with numpy+soundfile in `tmp_path` fixtures
 - CLI uses Click groups + Rich progress/tables

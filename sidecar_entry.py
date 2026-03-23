@@ -57,20 +57,22 @@ if os.path.isdir(models_dir):
     else:
         print(f"[sidecar] VARNING: WeSpeaker-modell saknas: {wespeaker_model}", file=sys.stderr)
 
-    # Kontrollera att den förväntade modellkatalogen finns
-    whisper_model_dir = os.path.join(
-        models_dir, "hub", "models--KBLab--kb-whisper-small"
-    )
-    if os.path.isdir(whisper_model_dir):
-        print(f"[sidecar] Whisper-modell hittad: {whisper_model_dir}", file=sys.stderr)
+    # Dynamiskt: skanna hub/ efter alla bundlade KB-Whisper-modeller
+    hub_dir = os.path.join(models_dir, "hub")
+    _found_whisper_models = []
+    if os.path.isdir(hub_dir):
+        for entry in os.listdir(hub_dir):
+            if entry.startswith("models--KBLab--kb-whisper-"):
+                _found_whisper_models.append(entry)
+
+    if _found_whisper_models:
+        print(f"[sidecar] Hittade {len(_found_whisper_models)} whisper-modell(er):", file=sys.stderr)
+        for m in sorted(_found_whisper_models):
+            print(f"  - {m}", file=sys.stderr)
     else:
-        print(
-            f"[sidecar] VARNING: Whisper-modellkatalog saknas: {whisper_model_dir}",
-            file=sys.stderr,
-        )
+        print("[sidecar] VARNING: Inga KB-Whisper-modeller hittades i hub/", file=sys.stderr)
 
     # Auto-reparera brutna symlinks vid uppstart
-    hub_dir = os.path.join(models_dir, "hub")
     if os.path.isdir(hub_dir):
         broken_count = 0
         repaired_count = 0
@@ -107,41 +109,29 @@ if os.path.isdir(models_dir):
         else:
             print("[sidecar] Inga brutna symlinks hittade", file=sys.stderr)
 
-    # Pre-flight: validera att modellfilerna finns
-    _model_ok = True
-    _whisper_refs = os.path.join(whisper_model_dir, "refs", "main")
-    if not os.path.isfile(_whisper_refs):
-        print(
-            f"[sidecar] KRITISKT: refs/main saknas: {_whisper_refs}",
-            file=sys.stderr,
-        )
-        _model_ok = False
-    else:
+    # Pre-flight: validera varje hittad whisper-modell
+    _any_model_ok = False
+    for _model_name in _found_whisper_models:
+        _whisper_model_dir = os.path.join(hub_dir, _model_name)
+        _whisper_refs = os.path.join(_whisper_model_dir, "refs", "main")
+        if not os.path.isfile(_whisper_refs):
+            print(f"[sidecar] VARNING: refs/main saknas: {_whisper_refs}", file=sys.stderr)
+            continue
         _snapshot_hash = open(_whisper_refs, encoding="utf-8").read().strip()
-        _snapshot_dir = os.path.join(whisper_model_dir, "snapshots", _snapshot_hash)
+        _snapshot_dir = os.path.join(_whisper_model_dir, "snapshots", _snapshot_hash)
         if not os.path.isdir(_snapshot_dir):
-            print(
-                f"[sidecar] KRITISKT: Snapshot-katalog saknas: {_snapshot_dir}",
-                file=sys.stderr,
-            )
-            _model_ok = False
-        else:
-            _model_bin = os.path.join(_snapshot_dir, "model.bin")
-            if not os.path.isfile(_model_bin):
-                print(
-                    f"[sidecar] KRITISKT: model.bin saknas: {_model_bin}",
-                    file=sys.stderr,
-                )
-                _model_ok = False
-            else:
-                print(
-                    f"[sidecar] Modellvalidering OK: {_snapshot_dir}",
-                    file=sys.stderr,
-                )
+            print(f"[sidecar] VARNING: Snapshot-katalog saknas: {_snapshot_dir}", file=sys.stderr)
+            continue
+        _model_bin = os.path.join(_snapshot_dir, "model.bin")
+        if not os.path.isfile(_model_bin):
+            print(f"[sidecar] VARNING: model.bin saknas: {_model_bin}", file=sys.stderr)
+            continue
+        print(f"[sidecar] Modellvalidering OK: {_model_name}", file=sys.stderr)
+        _any_model_ok = True
 
-    if not _model_ok:
+    if not _any_model_ok:
         print(
-            "[sidecar] KRITISKT: Whisper-modellen är ofullständig. "
+            "[sidecar] KRITISKT: Ingen giltig whisper-modell hittades. "
             "Transkribering kommer att misslyckas.",
             file=sys.stderr,
         )
