@@ -2,7 +2,7 @@
 
 ## 1. Ladda ner
 
-Ladda ner filen **MötesSkribent_0.4.0_x64.zip** från releases.
+Ladda ner filen **MotesSkribent_x64.zip** från releases.
 
 ## 2. Extrahera och installera
 
