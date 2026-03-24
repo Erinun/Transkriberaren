@@ -1,4 +1,4 @@
-# Complete release pipeline: build installer + package zip.
+﻿# Complete release pipeline: build installer + package zip.
 # Run from project root:
 #   powershell -ExecutionPolicy Bypass -File scripts\build_zip.ps1
 #
@@ -18,16 +18,16 @@ Set-Location $ProjectRoot
 # Read version from pyproject.toml
 $versionLine = Select-String -Path (Join-Path $ProjectRoot "pyproject.toml") -Pattern '^version\s*=\s*"(.+)"'
 $version = $versionLine.Matches[0].Groups[1].Value
-$zipName = "MötesSkribent_${version}_x64.zip"
+$zipName = "MotesSkribent_${version}_x64.zip"
 
 Write-Host "============================================" -ForegroundColor Cyan
-Write-Host "  MötesSkribent v$version — Release-paketering" -ForegroundColor Cyan
+Write-Host "  MotesSkribent v$version - Release-paketering" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
 
 # --- Step 1: Run full build pipeline ---
 if (-not $SkipBuild) {
-    Write-Host "[1/2] Kör komplett bygg-pipeline..." -ForegroundColor Yellow
+    Write-Host '[1/2] Kor komplett bygg-pipeline...' -ForegroundColor Yellow
     $buildArgs = @()
     if ($SkipModels) { $buildArgs += "-SkipModels" }
     if ($SkipSidecar) { $buildArgs += "-SkipSidecar" }
@@ -35,17 +35,17 @@ if (-not $SkipBuild) {
     $buildScript = Join-Path $ProjectRoot "scripts\build_installer.ps1"
     & powershell -ExecutionPolicy Bypass -File $buildScript @buildArgs
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "  Bygg-pipeline misslyckades!" -ForegroundColor Red
+        Write-Host '  Bygg-pipeline misslyckades!' -ForegroundColor Red
         exit 1
     }
-    Write-Host "  OK" -ForegroundColor Green
+    Write-Host '  OK' -ForegroundColor Green
 } else {
-    Write-Host "[1/2] Hoppar över bygg (--SkipBuild)" -ForegroundColor Yellow
+    Write-Host '[1/2] Hoppar over bygg (-SkipBuild)' -ForegroundColor Yellow
 }
 Write-Host ""
 
 # --- Step 2: Package release zip ---
-Write-Host "[2/2] Skapar release-paket..." -ForegroundColor Yellow
+Write-Host '[2/2] Skapar release-paket...' -ForegroundColor Yellow
 
 $releaseDir = Join-Path $ProjectRoot "release"
 if (Test-Path $releaseDir) {
@@ -61,7 +61,7 @@ if (-not (Test-Path $nsisDir)) {
 }
 $installers = Get-ChildItem $nsisDir -Filter "*.exe"
 if ($installers.Count -eq 0) {
-    Write-Host "  FEL: Ingen NSIS-installer hittad!" -ForegroundColor Red
+    Write-Host '  FEL: Ingen NSIS-installer hittad!' -ForegroundColor Red
     exit 1
 }
 
@@ -69,12 +69,14 @@ if ($installers.Count -eq 0) {
 foreach ($installer in $installers) {
     Copy-Item $installer.FullName $releaseDir
     $sizeMB = [math]::Round($installer.Length / 1MB, 1)
-    Write-Host "  Installer: $($installer.Name) ($sizeMB MB)"
+    Write-Host ('  Installer: {0} ({1} MB)' -f $installer.Name, $sizeMB)
 }
 
 # Copy docs
-Copy-Item (Join-Path $ProjectRoot "CHANGELOG.md") $releaseDir
-Copy-Item (Join-Path $ProjectRoot "INSTALLATION.md") $releaseDir
+$changelogSrc = Join-Path $ProjectRoot "CHANGELOG.md"
+$installSrc = Join-Path $ProjectRoot "INSTALLATION.md"
+Copy-Item $changelogSrc $releaseDir
+Copy-Item $installSrc $releaseDir
 
 # Create zip
 $zipPath = Join-Path $ProjectRoot $zipName
@@ -83,7 +85,7 @@ if (Test-Path $zipPath) {
 }
 Compress-Archive -Path "$releaseDir\*" -DestinationPath $zipPath
 $zipSizeMB = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
-Write-Host "  OK" -ForegroundColor Green
+Write-Host '  OK' -ForegroundColor Green
 
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Green
@@ -91,10 +93,10 @@ Write-Host "  Release-paket klart!" -ForegroundColor Green
 Write-Host "============================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Zip: $zipPath" -ForegroundColor Cyan
-Write-Host "Storlek: $zipSizeMB MB"
+Write-Host ('Storlek: {0} MB' -f $zipSizeMB)
 Write-Host ""
-Write-Host "Innehåll:"
+Write-Host 'Innehall:'
 Get-ChildItem $releaseDir | ForEach-Object {
     $s = [math]::Round($_.Length / 1MB, 1)
-    Write-Host "  $($_.Name) ($s MB)"
+    Write-Host ('  {0} ({1} MB)' -f $_.Name, $s)
 }
