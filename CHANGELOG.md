@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.1] — 2026-03-26
+
+### Förbättringar
+- Mötesdetektering startar automatiskt vid app-start om den var aktiverad
+- Robust Teams-fönster-heuristik istället för keyword-matchning
+- Ollama-genereringsparametrar (temperatur, kontextfönster, max tokens) åter i Inställningar
+
+### Buggfixar
+- Fixa zip-filnamn i installationsdokumentation
+
 ## [0.4.0] — 2026-03-24
 
 ### Nya funktioner

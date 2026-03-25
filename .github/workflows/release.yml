@@ -1,0 +1,82 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-tauri
+        run: cargo install tauri-cli --locked
+
+      - name: Cache models
+        id: cache-models
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: models-${{ hashFiles('scripts/download_models.py') }}
+
+      - name: Install Python dependencies
+        run: |
+          pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Install frontend dependencies
+        working-directory: app
+        run: npm install
+
+      - name: Download models
+        if: steps.cache-models.outputs.cache-hit != 'true'
+        run: python scripts/download_models.py
+
+      - name: Build PyInstaller sidecar
+        run: python -m PyInstaller sidecar.spec --noconfirm
+
+      - name: Copy models to sidecar
+        shell: pwsh
+        run: |
+          robocopy models dist\motesskribent-sidecar\models /E /DCOPY:DAT /COPY:DAT /NFL /NDL /NJH /NJS
+          if ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE } else { exit 0 }
+
+      - name: Copy sidecar to Tauri resources
+        shell: pwsh
+        run: |
+          robocopy dist\motesskribent-sidecar src-tauri\sidecar /E /DCOPY:DAT /COPY:DAT /NFL /NDL /NJH /NJS
+          if ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE } else { exit 0 }
+
+      - name: Build Tauri NSIS installer
+        working-directory: src-tauri
+        run: cargo tauri build
+
+      - name: Package release zip
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File scripts\build_zip.ps1 -SkipBuild
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: MotesSkribent_*_x64.zip
