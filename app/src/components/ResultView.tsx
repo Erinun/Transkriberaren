@@ -233,7 +233,11 @@ export default function ResultView({
       extraContext,
       selectedTemplate.isCustom ? customPrompt : undefined,
     );
-    const options: OllamaOptions = { temperature: 0.3, num_ctx: 4096, num_predict: 2048 };
+    let options: OllamaOptions | undefined;
+    try {
+      const raw = localStorage.getItem("motesskribent-ollama-options");
+      if (raw) options = JSON.parse(raw);
+    } catch {}
     ollama.generate(prompt, options);
     setContentView("ollama");
   };
