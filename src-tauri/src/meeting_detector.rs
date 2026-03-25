@@ -80,7 +80,14 @@ fn send_meeting_notification(app: &AppHandle) {
 }
 
 /// Check for active Teams meeting windows using Win32 API.
-/// Returns a session id (hash of window title + PID) if a meeting is found.
+///
+/// Strategy: Teams always has a main window titled exactly "Microsoft Teams".
+/// When a meeting or call is active, an additional window appears with a title
+/// like "Sprint Planning | Microsoft Teams" or "Erik Nilsson | Microsoft Teams".
+/// We detect a meeting by finding any Teams window whose title is NOT the main
+/// window title, ignoring very short titles (notifications, popups).
+///
+/// Returns a session id (window title + PID) if a meeting is found.
 #[cfg(windows)]
 fn check_for_teams_meeting() -> Option<String> {
     use std::ffi::OsString;
@@ -99,8 +106,11 @@ fn check_for_teams_meeting() -> Option<String> {
 
     static RESULTS: StdMutex<Vec<WindowInfo>> = StdMutex::new(Vec::new());
 
-    // Meeting-related keywords in window titles
-    const MEETING_KEYWORDS: &[&str] = &["meeting", "möte", "call", "samtal"];
+    // Titles that represent the Teams main/hub window (not a meeting)
+    const MAIN_WINDOW_TITLES: &[&str] = &["microsoft teams", "microsoft teams (work or school)", "microsoft teams (free)"];
+
+    // Minimum title length to consider (filters out popups/notifications)
+    const MIN_TITLE_LENGTH: usize = 5;
 
     unsafe extern "system" fn enum_callback(hwnd: HWND, _: LPARAM) -> BOOL {
         if IsWindowVisible(hwnd).as_bool() {
@@ -136,20 +146,39 @@ fn check_for_teams_meeting() -> Option<String> {
 
     let results = RESULTS.lock().ok()?;
 
-    for info in results.iter() {
-        // Check if this is a Teams process
-        if !is_teams_process(info.pid) {
+    // Collect all visible Teams windows
+    let teams_windows: Vec<&WindowInfo> = results
+        .iter()
+        .filter(|info| is_teams_process(info.pid))
+        .collect();
+
+    if teams_windows.is_empty() {
+        return None;
+    }
+
+    log::debug!(
+        "Teams-fönster hittade: {:?}",
+        teams_windows.iter().map(|w| &w.title).collect::<Vec<_>>()
+    );
+
+    // Look for any Teams window that is NOT the main hub window
+    for info in &teams_windows {
+        let title_lower = info.title.to_lowercase();
+
+        // Skip very short titles (popups, notifications)
+        if info.title.len() < MIN_TITLE_LENGTH {
             continue;
         }
 
-        // Check if window title indicates a meeting
-        let title_lower = info.title.to_lowercase();
-        let is_meeting = MEETING_KEYWORDS.iter().any(|kw| title_lower.contains(kw));
-
-        if is_meeting {
-            let session_id = format!("{}_{}", info.pid, info.title);
-            return Some(session_id);
+        // Skip the main Teams window
+        if MAIN_WINDOW_TITLES.contains(&title_lower.as_str()) {
+            continue;
         }
+
+        // This is a non-main Teams window — likely a meeting or call
+        log::debug!("Mötesfönster kandidat: \"{}\" (pid {})", info.title, info.pid);
+        let session_id = format!("{}_{}", info.pid, info.title);
+        return Some(session_id);
     }
 
     None

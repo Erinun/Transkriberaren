@@ -87,6 +87,13 @@ export default function App() {
     ollamaStatus.checkHealth();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-start meeting detection if previously enabled
+  useEffect(() => {
+    if (localStorage.getItem("meetingDetectionEnabled") === "true") {
+      invoke("set_meeting_detection", { enabled: true }).catch(() => {});
+    }
+  }, []);
+
   // Track the audio file name for the current transcription
   const [currentAudioName, setCurrentAudioName] = useState<string>("");
 
