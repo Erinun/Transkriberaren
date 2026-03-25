@@ -335,10 +335,7 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
           </div>
         )}
 
-        {/* Ollama generation parameters */}
-        {ollamaStatus.available === true && (
-          <OllamaParametersSection />
-        )}
+
       </div>
 
       {/* Prompt templates */}
@@ -512,92 +509,6 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
             + Skapa ny promptmall
           </button>
         )}
-      </div>
-    </div>
-  );
-}
-
-const OLLAMA_OPTIONS_KEY = "motesskribent-ollama-options";
-
-interface OllamaOptionsState {
-  temperature: number;
-  num_ctx: number;
-  num_predict: number;
-}
-
-function loadOllamaOptions(): OllamaOptionsState {
-  try {
-    const raw = localStorage.getItem(OLLAMA_OPTIONS_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return { temperature: 0.3, num_ctx: 4096, num_predict: 2048 };
-}
-
-function OllamaParametersSection() {
-  const [opts, setOpts] = useState<OllamaOptionsState>(loadOllamaOptions);
-
-  const update = (key: keyof OllamaOptionsState, value: number) => {
-    setOpts((prev) => {
-      const next = { ...prev, [key]: value };
-      localStorage.setItem(OLLAMA_OPTIONS_KEY, JSON.stringify(next));
-      return next;
-    });
-  };
-
-  return (
-    <div className="space-y-3 pt-3">
-      <p className="text-sm text-[var(--color-text-muted)] font-medium">Genereringsparametrar</p>
-
-      {/* Temperature */}
-      <div>
-        <div className="flex items-center justify-between mb-1">
-          <label className="text-xs text-[var(--color-text-muted)]">Temperatur</label>
-          <span className="text-xs text-[var(--color-text-muted)]">{opts.temperature.toFixed(1)}</span>
-        </div>
-        <input
-          type="range"
-          min={0}
-          max={10}
-          step={1}
-          value={opts.temperature * 10}
-          onChange={(e) => update("temperature", Number(e.target.value) / 10)}
-          className="result-range w-full"
-        />
-        <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5">
-          Lagre = mer fokuserad, hogre = mer kreativ. Standard: 0.3
-        </p>
-      </div>
-
-      {/* Context window */}
-      <div>
-        <label className="text-xs text-[var(--color-text-muted)] block mb-1">Kontextfonster (num_ctx)</label>
-        <select
-          value={opts.num_ctx}
-          onChange={(e) => update("num_ctx", Number(e.target.value))}
-          className="w-full px-3 py-2 rounded-lg glass-input text-sm"
-        >
-          <option value={2048}>2 048</option>
-          <option value={4096}>4 096 (standard)</option>
-          <option value={8192}>8 192</option>
-          <option value={16384}>16 384</option>
-          <option value={32768}>32 768</option>
-        </select>
-      </div>
-
-      {/* Max tokens */}
-      <div>
-        <label className="text-xs text-[var(--color-text-muted)] block mb-1">Max tokens (num_predict)</label>
-        <select
-          value={opts.num_predict}
-          onChange={(e) => update("num_predict", Number(e.target.value))}
-          className="w-full px-3 py-2 rounded-lg glass-input text-sm"
-        >
-          <option value={512}>512</option>
-          <option value={1024}>1 024</option>
-          <option value={2048}>2 048 (standard)</option>
-          <option value={4096}>4 096</option>
-          <option value={8192}>8 192</option>
-        </select>
       </div>
     </div>
   );
