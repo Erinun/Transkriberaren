@@ -102,6 +102,14 @@ export function stripMarkdownForLLM(md: string): string {
   return text.trim();
 }
 
+/**
+ * Estimate token count for a text string.
+ * Swedish text averages ~4 characters per token.
+ */
+export function estimateTokenCount(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
 export function buildPrompt(
   template: PromptTemplate,
   transcription: string,

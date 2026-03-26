@@ -7,6 +7,7 @@ import { useOllama, type OllamaStatus, type OllamaOptions } from "../hooks/useOl
 import { usePromptTemplates } from "../hooks/usePromptTemplates";
 import {
   buildPrompt,
+  estimateTokenCount,
   type PromptTemplate,
 } from "../data/promptTemplates";
 
@@ -646,6 +647,38 @@ export default function ResultView({
                     ))}
                   </select>
                 </div>
+
+                {/* Context window warning */}
+                {mdContent && (() => {
+                  const prompt = buildPrompt(
+                    selectedTemplate,
+                    mdContent,
+                    extraContext,
+                    selectedTemplate.isCustom ? customPrompt : undefined,
+                  );
+                  const estTokens = estimateTokenCount(prompt);
+                  let numCtx = 8192;
+                  let numPredict = 4096;
+                  try {
+                    const raw = localStorage.getItem("motesskribent-ollama-options");
+                    if (raw) {
+                      const parsed = JSON.parse(raw);
+                      if (parsed.num_ctx) numCtx = parsed.num_ctx;
+                      if (parsed.num_predict) numPredict = parsed.num_predict;
+                    }
+                  } catch {}
+
+                  if (estTokens + numPredict > numCtx) {
+                    return (
+                      <div className="p-2 rounded-lg text-[10px] text-yellow-200 bg-yellow-500/10 border border-yellow-500/20">
+                        Transkriberingen ar cirka {estTokens.toLocaleString("sv-SE")} tokens
+                        men kontextfonstret ar {numCtx.toLocaleString("sv-SE")}.
+                        Kontextfonstret hojs automatiskt, men det kan krava mer RAM.
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
 
                 {/* Generate button */}
                 <button

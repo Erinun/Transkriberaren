@@ -526,11 +526,18 @@ interface OllamaOptionsState {
 }
 
 function loadOllamaOptions(): OllamaOptionsState {
+  const defaults = { temperature: 0.3, num_ctx: 8192, num_predict: 4096 };
   try {
     const raw = localStorage.getItem(OLLAMA_OPTIONS_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // Migrate old defaults to new higher values
+      if (parsed.num_ctx === 4096) parsed.num_ctx = 8192;
+      if (parsed.num_predict === 2048) parsed.num_predict = 4096;
+      return { ...defaults, ...parsed };
+    }
   } catch {}
-  return { temperature: 0.3, num_ctx: 4096, num_predict: 2048 };
+  return defaults;
 }
 
 function OllamaParametersSection() {
@@ -577,11 +584,17 @@ function OllamaParametersSection() {
           className="w-full px-3 py-2 rounded-lg glass-input text-sm"
         >
           <option value={2048}>2 048</option>
-          <option value={4096}>4 096 (standard)</option>
-          <option value={8192}>8 192</option>
+          <option value={4096}>4 096</option>
+          <option value={8192}>8 192 (standard)</option>
           <option value={16384}>16 384</option>
           <option value={32768}>32 768</option>
+          <option value={65536}>65 536</option>
+          <option value={131072}>131 072</option>
         </select>
+        <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5">
+          Storre varden kraver mer RAM. 8192 racker for moeten under 30 min. For langre moeten (1+ timme), anvand 32768 eller hogre.
+          Kontextfonstret hojs automatiskt om transkriberingen ar storre.
+        </p>
       </div>
 
       {/* Max tokens */}
@@ -594,9 +607,10 @@ function OllamaParametersSection() {
         >
           <option value={512}>512</option>
           <option value={1024}>1 024</option>
-          <option value={2048}>2 048 (standard)</option>
-          <option value={4096}>4 096</option>
+          <option value={2048}>2 048</option>
+          <option value={4096}>4 096 (standard)</option>
           <option value={8192}>8 192</option>
+          <option value={16384}>16 384</option>
         </select>
       </div>
     </div>
