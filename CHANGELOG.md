@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.3] — 2026-03-27
+
+### Bygg och distribution
+- Fixa CI-pipeline: `--bundles none` → `--no-bundle` (tauri-cli v2)
+- Fixa build_zip.ps1: peka på Inno Setup output istället för NSIS
+- WebView2 tre-stegs felhantering i installern
+- Uppdatera INSTALLATION.md: ta bort NSIS-referens
+
 ## [0.4.2] — 2026-03-27
 
 ### Buggfixar

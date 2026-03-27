@@ -7,7 +7,7 @@ Ladda ner filen **MotesSkribent_x64.zip** från releases.
 ## 2. Extrahera och installera
 
 1. Extrahera zip-filen till valfri plats.
-2. Dubbelklicka på NSIS-installern (`.exe`-filen i zip-arkivet).
+2. Dubbelklicka på installern (`.exe`-filen i zip-arkivet).
 3. **Windows SmartScreen-varning** kan visas eftersom appen inte är signerad med ett certifikat. Klicka **"Mer info"** och sedan **"Kör ändå"**.
 4. Följ installationsguiden. Appen installeras per användare — ingen administratörsbehörighet krävs.
 

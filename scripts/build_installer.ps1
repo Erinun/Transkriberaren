@@ -99,7 +99,7 @@ Write-Host "  OK" -ForegroundColor Green
 Write-Host ""
 
 # --- Step 5: Build Tauri app (without bundler) ---
-Write-Host "[5/7] Bygger Tauri-app (utan NSIS)..." -ForegroundColor Yellow
+Write-Host "[5/7] Bygger Tauri-app (utan bundler)..." -ForegroundColor Yellow
 Set-Location (Join-Path $ProjectRoot "src-tauri")
 
 # Ensure cargo is in PATH
@@ -107,7 +107,7 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
     $env:Path += ";$env:USERPROFILE\.cargo\bin"
 }
 
-cargo tauri build --bundles none
+cargo tauri build --no-bundle
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  Tauri build misslyckades!" -ForegroundColor Red
     exit 1

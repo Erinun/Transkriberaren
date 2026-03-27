@@ -77,7 +77,7 @@ jobs:
 
       - name: Build Tauri app (without bundler)
         working-directory: src-tauri
-        run: cargo tauri build --bundles none
+        run: cargo tauri build --no-bundle
 
       - name: Extract version
         id: version

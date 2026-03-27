@@ -82,8 +82,32 @@ begin
     if not IsWebView2Installed then
     begin
       Log('WebView2 Runtime saknas, installerar...');
-      Exec(ExpandConstant('{tmp}\MicrosoftEdgeWebview2Setup.exe'),
-        '/silent /install', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      if not Exec(ExpandConstant('{tmp}\MicrosoftEdgeWebview2Setup.exe'),
+        '/silent /install', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+      begin
+        MsgBox('Kunde inte starta WebView2-installern. ' +
+          'MötesSkribent kräver WebView2 för att fungera.' + #13#10 + #13#10 +
+          'Ladda ner WebView2 manuellt från:' + #13#10 +
+          'https://developer.microsoft.com/en-us/microsoft-edge/webview2/',
+          mbError, MB_OK);
+      end
+      else if ResultCode <> 0 then
+      begin
+        MsgBox('WebView2-installationen misslyckades (felkod: ' +
+          IntToStr(ResultCode) + ').' + #13#10 + #13#10 +
+          'MötesSkribent kräver WebView2 för att fungera.' + #13#10 +
+          'Ladda ner WebView2 manuellt från:' + #13#10 +
+          'https://developer.microsoft.com/en-us/microsoft-edge/webview2/',
+          mbError, MB_OK);
+      end
+      else if not IsWebView2Installed then
+      begin
+        MsgBox('WebView2 verkar inte ha installerats korrekt.' + #13#10 + #13#10 +
+          'MötesSkribent kräver WebView2 för att fungera.' + #13#10 +
+          'Ladda ner WebView2 manuellt från:' + #13#10 +
+          'https://developer.microsoft.com/en-us/microsoft-edge/webview2/',
+          mbError, MB_OK);
+      end;
     end else
     begin
       Log('WebView2 Runtime redan installerat.');

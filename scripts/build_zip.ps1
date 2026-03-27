@@ -3,7 +3,7 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\build_zip.ps1
 #
 # This script runs the full build_installer.ps1 pipeline, then packages
-# the NSIS installer together with docs into a release zip.
+# the Inno Setup installer together with docs into a release zip.
 
 param(
     [switch]$SkipModels,    # Skip model download (if already done)
@@ -53,15 +53,15 @@ if (Test-Path $releaseDir) {
 }
 New-Item -ItemType Directory -Path $releaseDir | Out-Null
 
-# Find NSIS installer
-$nsisDir = Join-Path $ProjectRoot "src-tauri\target\release\bundle\nsis"
-if (-not (Test-Path $nsisDir)) {
-    Write-Host "  FEL: NSIS-katalog saknas: $nsisDir" -ForegroundColor Red
+# Find Inno Setup installer
+$outputDir = Join-Path $ProjectRoot "output"
+if (-not (Test-Path $outputDir)) {
+    Write-Host "  FEL: output/-katalog saknas: $outputDir" -ForegroundColor Red
     exit 1
 }
-$installers = Get-ChildItem $nsisDir -Filter "*.exe"
+$installers = Get-ChildItem $outputDir -Filter "*-setup.exe"
 if ($installers.Count -eq 0) {
-    Write-Host '  FEL: Ingen NSIS-installer hittad!' -ForegroundColor Red
+    Write-Host '  FEL: Ingen Inno Setup-installer hittad!' -ForegroundColor Red
     exit 1
 }
 
