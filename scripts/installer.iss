@@ -45,8 +45,8 @@ Source: "..\src-tauri\target\release\{#MyAppExeName}"; DestDir: "{app}"; Flags: 
 ; Sidecar (PyInstaller bundle + models)
 Source: "..\src-tauri\sidecar\*"; DestDir: "{app}\sidecar"; Flags: ignoreversion recursesubdirs createallsubdirs
 
-; WebView2 bootstrapper (installed if needed)
-Source: "..\src-tauri\MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall nocompression
+; WebView2 offline installer (installed if needed)
+Source: "..\src-tauri\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall nocompression
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -82,7 +82,7 @@ begin
     if not IsWebView2Installed then
     begin
       Log('WebView2 Runtime saknas, installerar...');
-      if not Exec(ExpandConstant('{tmp}\MicrosoftEdgeWebview2Setup.exe'),
+      if not Exec(ExpandConstant('{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe'),
         '/silent /install', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
       begin
         MsgBox('Kunde inte starta WebView2-installern. ' +
