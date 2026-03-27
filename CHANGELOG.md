@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.2] — 2026-03-27
+
+### Buggfixar
+- Fixa Ollama-timeout: separata connect_timeout och idle_timeout per chunk
+- Auto-justering av num_ctx för stora transkriberingar
+
+### Bygg och distribution
+- Byt från NSIS till Inno Setup-installer (NSIS 32-bit kraschar på payloads >1.8 GB)
+- WebView2-bootstrapper ingår i installern
+- Per-user-installation (inget admin-konto krävs)
+
 ## [0.4.1] — 2026-03-26
 
 ### Förbättringar

@@ -42,5 +42,8 @@ htmlcov/
 # Tauri bundled sidecar (built, not committed)
 src-tauri/sidecar/
 
+# WebView2 bootstrapper (downloaded during build)
+src-tauri/MicrosoftEdgeWebview2Setup.exe
+
 # Windows artifacts
 nul

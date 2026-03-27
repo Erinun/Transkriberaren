@@ -31,6 +31,9 @@ jobs:
       - name: Install cargo-tauri
         run: cargo install tauri-cli --locked
 
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
       - name: Cache models
         id: cache-models
         uses: actions/cache@v4
@@ -67,16 +70,28 @@ jobs:
           robocopy dist\motesskribent-sidecar src-tauri\sidecar /E /DCOPY:DAT /COPY:DAT /NFL /NDL /NJH /NJS
           if ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE } else { exit 0 }
 
-      - name: Build Tauri NSIS installer
-        working-directory: src-tauri
-        run: cargo tauri build
-
-      - name: Package release zip
+      - name: Download WebView2 bootstrapper
         shell: pwsh
         run: |
-          powershell -ExecutionPolicy Bypass -File scripts\build_zip.ps1 -SkipBuild
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile "src-tauri\MicrosoftEdgeWebview2Setup.exe"
+
+      - name: Build Tauri app (without bundler)
+        working-directory: src-tauri
+        run: cargo tauri build --bundles none
+
+      - name: Extract version
+        id: version
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path pyproject.toml -Pattern '^version\s*=\s*"(.+)"').Matches[0].Groups[1].Value
+          echo "VERSION=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Build Inno Setup installer
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=${{ steps.version.outputs.VERSION }} scripts\installer.iss
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: MotesSkribent_*_x64.zip
+          files: output/MötesSkribent_*_x64-setup.exe

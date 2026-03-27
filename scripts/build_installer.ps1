@@ -1,4 +1,4 @@
-﻿# Complete build pipeline: models → PyInstaller → Tauri NSIS installer.
+﻿# Complete build pipeline: models → PyInstaller → Tauri exe → Inno Setup installer.
 # Run from project root:
 #   powershell -ExecutionPolicy Bypass -File scripts\build_installer.ps1
 #
@@ -7,6 +7,7 @@
 #   - PyInstaller installed (pip install pyinstaller)
 #   - Rust toolchain + cargo-tauri (cargo install tauri-cli)
 #   - Node.js + npm
+#   - Inno Setup 6 installed (choco install innosetup)
 #   - No HF_TOKEN needed (all models are public)
 
 param(
@@ -25,7 +26,7 @@ Write-Host ""
 
 # --- Step 1: Download models ---
 if (-not $SkipModels) {
-    Write-Host "[1/5] Laddar ned modeller..." -ForegroundColor Yellow
+    Write-Host "[1/7] Laddar ned modeller..." -ForegroundColor Yellow
     $modelsHub = Join-Path $ProjectRoot "models\hub"
     if (Test-Path $modelsHub) {
         Write-Host "  models/hub/ finns redan, hoppar över nedladdning"
@@ -39,13 +40,13 @@ if (-not $SkipModels) {
     }
     Write-Host "  OK" -ForegroundColor Green
 } else {
-    Write-Host "[1/5] Hoppar över modellnedladdning (--SkipModels)" -ForegroundColor Yellow
+    Write-Host "[1/7] Hoppar över modellnedladdning (--SkipModels)" -ForegroundColor Yellow
 }
 Write-Host ""
 
 # --- Step 2: Build PyInstaller sidecar ---
 if (-not $SkipSidecar) {
-    Write-Host "[2/5] Bygger PyInstaller-sidecar..." -ForegroundColor Yellow
+    Write-Host "[2/7] Bygger PyInstaller-sidecar..." -ForegroundColor Yellow
     python -m PyInstaller sidecar.spec --noconfirm
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  PyInstaller misslyckades!" -ForegroundColor Red
@@ -53,12 +54,12 @@ if (-not $SkipSidecar) {
     }
     Write-Host "  OK" -ForegroundColor Green
 } else {
-    Write-Host "[2/5] Hoppar över sidecar-bygg (--SkipSidecar)" -ForegroundColor Yellow
+    Write-Host "[2/7] Hoppar över sidecar-bygg (--SkipSidecar)" -ForegroundColor Yellow
 }
 Write-Host ""
 
 # --- Step 3: Copy models into sidecar dist ---
-Write-Host "[3/5] Kopierar modeller till sidecar..." -ForegroundColor Yellow
+Write-Host "[3/7] Kopierar modeller till sidecar..." -ForegroundColor Yellow
 $modelsSource = Join-Path $ProjectRoot "models"
 $modelsDest = Join-Path $ProjectRoot "dist\motesskribent-sidecar\models"
 
@@ -81,7 +82,7 @@ Write-Host "  OK" -ForegroundColor Green
 Write-Host ""
 
 # --- Step 4: Copy sidecar into Tauri resources ---
-Write-Host "[4/5] Kopierar sidecar till src-tauri/sidecar/..." -ForegroundColor Yellow
+Write-Host "[4/7] Kopierar sidecar till src-tauri/sidecar/..." -ForegroundColor Yellow
 $sidecarDest = Join-Path $ProjectRoot "src-tauri\sidecar"
 
 if (Test-Path $sidecarDest) {
@@ -97,8 +98,8 @@ $LASTEXITCODE = 0
 Write-Host "  OK" -ForegroundColor Green
 Write-Host ""
 
-# --- Step 5: Build Tauri NSIS installer ---
-Write-Host "[5/5] Bygger Tauri NSIS-installer..." -ForegroundColor Yellow
+# --- Step 5: Build Tauri app (without bundler) ---
+Write-Host "[5/7] Bygger Tauri-app (utan NSIS)..." -ForegroundColor Yellow
 Set-Location (Join-Path $ProjectRoot "src-tauri")
 
 # Ensure cargo is in PATH
@@ -106,12 +107,45 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
     $env:Path += ";$env:USERPROFILE\.cargo\bin"
 }
 
-# Override bundle resources to include sidecar (base config has empty resources for dev mode)
-# Resources already configured in tauri.conf.json (sidecar/**/*)
-
-cargo tauri build
+cargo tauri build --bundles none
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  Tauri build misslyckades!" -ForegroundColor Red
+    exit 1
+}
+Write-Host "  OK" -ForegroundColor Green
+Set-Location $ProjectRoot
+Write-Host ""
+
+# --- Step 6: Download WebView2 bootstrapper ---
+Write-Host "[6/7] Laddar ned WebView2-bootstrapper..." -ForegroundColor Yellow
+$webview2Path = Join-Path $ProjectRoot "src-tauri\MicrosoftEdgeWebview2Setup.exe"
+if (-not (Test-Path $webview2Path)) {
+    Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile $webview2Path
+}
+Write-Host "  OK" -ForegroundColor Green
+Write-Host ""
+
+# --- Step 7: Build Inno Setup installer ---
+Write-Host "[7/7] Bygger Inno Setup-installer..." -ForegroundColor Yellow
+
+# Find Inno Setup compiler
+$iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+if (-not (Test-Path $iscc)) {
+    # Try PATH
+    $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+    if (-not $iscc) {
+        Write-Host "  FEL: Inno Setup hittades inte! Installera med: choco install innosetup" -ForegroundColor Red
+        exit 1
+    }
+}
+
+# Read version from pyproject.toml
+$versionLine = Select-String -Path (Join-Path $ProjectRoot "pyproject.toml") -Pattern '^version\s*=\s*"(.+)"'
+$version = $versionLine.Matches[0].Groups[1].Value
+
+& $iscc /DMyAppVersion=$version (Join-Path $ProjectRoot "scripts\installer.iss")
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  Inno Setup misslyckades!" -ForegroundColor Red
     exit 1
 }
 Write-Host "  OK" -ForegroundColor Green
@@ -124,9 +158,9 @@ Write-Host "============================================" -ForegroundColor Green
 Write-Host ""
 
 # Find the output installer
-$nsisDir = Join-Path $ProjectRoot "src-tauri\target\release\bundle\nsis"
-if (Test-Path $nsisDir) {
-    $installers = Get-ChildItem $nsisDir -Filter "*.exe"
+$outputDir = Join-Path $ProjectRoot "output"
+if (Test-Path $outputDir) {
+    $installers = Get-ChildItem $outputDir -Filter "*-setup.exe"
     foreach ($installer in $installers) {
         $sizeMB = [math]::Round($installer.Length / 1MB, 1)
         Write-Host "Installer: $($installer.FullName)" -ForegroundColor Cyan

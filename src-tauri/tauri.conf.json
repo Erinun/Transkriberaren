@@ -36,7 +36,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": "all",
     "icon": [
       "icons/icon.png",
       "icons/32x32.png",
@@ -45,12 +45,7 @@
       "icons/icon.ico"
     ],
     "resources": ["sidecar/**/*"],
-    "windows": {
-      "nsis": {
-        "languages": ["Swedish"],
-        "installMode": "currentUser"
-      }
-    },
+    "windows": {},
     "publisher": "MötesSkribent",
     "shortDescription": "Lokal mötesanteckning med AI"
   },
