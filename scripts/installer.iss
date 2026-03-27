@@ -82,7 +82,7 @@ begin
     if not IsWebView2Installed then
     begin
       Log('WebView2 Runtime saknas, installerar...');
-      if not Exec(ExpandConstant('{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe'),
+      if not ShellExec('runas', ExpandConstant('{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe'),
         '/silent /install', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
       begin
         MsgBox('Kunde inte starta WebView2-installern. ' +
