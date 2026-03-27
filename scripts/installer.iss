@@ -6,7 +6,7 @@
 ;   iscc /DMyAppVersion=0.4.2 scripts\installer.iss   (override version)
 
 #ifndef MyAppVersion
-  #define MyAppVersion "0.4.2"
+  #define MyAppVersion "0.4.4"
 #endif
 
 #define MyAppName "MötesSkribent"
