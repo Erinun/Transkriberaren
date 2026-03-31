@@ -73,7 +73,7 @@ jobs:
       - name: Download WebView2 bootstrapper
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?LinkId=2124703" -OutFile "src-tauri\MicrosoftEdgeWebview2Setup.exe"
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile "src-tauri\MicrosoftEdgeWebview2Setup.exe"
 
       - name: Build Tauri app (without bundler)
         working-directory: src-tauri
