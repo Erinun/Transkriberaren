@@ -20,6 +20,7 @@ type SidecarStatus = "starting" | "warming_up" | "ready" | "error";
 const NAV_ITEMS: { id: View; label: string }[] = [
   { id: "recording", label: "Spela in" },
   { id: "transcribe", label: "Transkribera" },
+  { id: "history", label: "Transkriptioner" },
   { id: "settings", label: "Inställningar" },
 ];
 
