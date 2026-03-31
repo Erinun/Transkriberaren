@@ -45,7 +45,11 @@
       "icons/icon.ico"
     ],
     "resources": ["sidecar/**/*"],
-    "windows": {},
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
     "publisher": "MötesSkribent",
     "shortDescription": "Lokal mötesanteckning med AI"
   },
