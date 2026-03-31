@@ -109,11 +109,12 @@ def _handle_transcribe(request_id: str, audio_path: str, config: dict) -> None:
     )
 
     def on_progress(step: str, fraction: float):
+        percent = -1 if fraction < 0 else round(fraction * 100)
         _emit({
             "request_id": request_id,
             "type": "progress",
             "stage": step,
-            "percent": round(fraction * 100),
+            "percent": percent,
             "message": _STEPS_SV.get(step, step),
         })
 

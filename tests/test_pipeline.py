@@ -5,7 +5,13 @@ from pathlib import Path
 import pytest
 
 from motesskribent.diarization.diarizer import SpeakerSegment
-from motesskribent.pipeline import SPEED_PROFILES, PipelineConfig, PipelineResult, _assign_speakers
+from motesskribent.pipeline import (
+    SPEED_PROFILES,
+    PipelineConfig,
+    PipelineResult,
+    _assign_speakers,
+    _map_transcription_progress,
+)
 from motesskribent.transcription.transcriber import TranscribedSegment
 
 
@@ -175,3 +181,47 @@ class TestSpeedProfiles:
     def test_config_default_profile(self):
         cfg = PipelineConfig()
         assert cfg.speed_profile == "balanced"
+
+
+class TestTranscriptionProgressMapping:
+    """Enhetstester för _map_transcription_progress."""
+
+    def test_phase_a_start(self):
+        """Fas A, fraction=0 -> 5%."""
+        result = _map_transcription_progress(0.0, diarization_done=False, fraction_at_diar_done=0.0)
+        assert abs(result - 0.05) < 0.001
+
+    def test_phase_a_midpoint(self):
+        """Fas A, fraction=0.5 -> 15%."""
+        result = _map_transcription_progress(0.5, diarization_done=False, fraction_at_diar_done=0.0)
+        assert abs(result - 0.15) < 0.001
+
+    def test_phase_a_end(self):
+        """Fas A, fraction=1.0 -> 25%."""
+        result = _map_transcription_progress(1.0, diarization_done=False, fraction_at_diar_done=0.0)
+        assert abs(result - 0.25) < 0.001
+
+    def test_phase_b_diar_done_at_half(self):
+        """Fas B: diar klar vid fraction=0.5, nu på 0.75 -> halvvägs 30-90% = 60%."""
+        result = _map_transcription_progress(0.75, diarization_done=True, fraction_at_diar_done=0.5)
+        assert abs(result - 0.60) < 0.001
+
+    def test_phase_b_diar_done_at_start(self):
+        """Fas B: diar klar vid fraction=0.0, nu på 0.5 -> halvvägs 30-90% = 60%."""
+        result = _map_transcription_progress(0.5, diarization_done=True, fraction_at_diar_done=0.0)
+        assert abs(result - 0.60) < 0.001
+
+    def test_phase_b_complete(self):
+        """Fas B: fraction=1.0 -> 90%."""
+        result = _map_transcription_progress(1.0, diarization_done=True, fraction_at_diar_done=0.5)
+        assert abs(result - 0.90) < 0.001
+
+    def test_phase_b_diar_done_at_end(self):
+        """Edge case: diar done when transcription already at 1.0."""
+        result = _map_transcription_progress(1.0, diarization_done=True, fraction_at_diar_done=1.0)
+        assert abs(result - 0.90) < 0.001
+
+    def test_phase_b_just_started(self):
+        """Fas B: just after diar done, no additional progress -> 30%."""
+        result = _map_transcription_progress(0.5, diarization_done=True, fraction_at_diar_done=0.5)
+        assert abs(result - 0.30) < 0.001

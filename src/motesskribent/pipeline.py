@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -83,6 +84,30 @@ def _assign_speakers(
         seg.speaker_label = best_speaker_label
 
     return transcription_segments
+
+
+def _map_transcription_progress(
+    fraction: float,
+    diarization_done: bool,
+    fraction_at_diar_done: float,
+) -> float:
+    """Map raw transcription fraction to overall pipeline progress.
+
+    Phase A (diarization running): fraction 0..1 → 0.05..0.25
+    Phase B (diarization done):    remaining fraction → 0.30..0.90
+    """
+    if not diarization_done:
+        # Phase A: map 0-1 to 5-25%
+        return 0.05 + fraction * 0.20
+
+    # Phase B: map remaining fraction to 30-90%
+    remaining_total = 1.0 - fraction_at_diar_done
+    if remaining_total <= 0:
+        return 0.90
+
+    progress_since_diar = fraction - fraction_at_diar_done
+    remaining_fraction = min(max(progress_since_diar / remaining_total, 0.0), 1.0)
+    return 0.30 + remaining_fraction * 0.60
 
 
 def run_pipeline(
@@ -168,6 +193,17 @@ def run_pipeline(
         if use_channel_diarization:
             logger.info("Använder kanalbaserad talarseparering (stereo-inspelning)")
             return 0.0
+
+        # Heartbeat thread: emit indeterminate progress every 5s during diarization
+        heartbeat_stop = threading.Event()
+
+        def _heartbeat():
+            while not heartbeat_stop.wait(5.0):
+                _progress("diarization", -1)
+
+        heartbeat_thread = threading.Thread(target=_heartbeat, daemon=True)
+        heartbeat_thread.start()
+
         try:
             from motesskribent.diarization.diarizer import diarize
             diar_result = diarize(
@@ -183,19 +219,25 @@ def run_pipeline(
             num_speakers = 1
             diarization_failed = True
             warnings.append("Talarseparering ej tillgänglig")
+        finally:
+            heartbeat_stop.set()
+            heartbeat_thread.join(timeout=1.0)
         return time.perf_counter() - t
 
     # Throttled transcription progress: emit max once per percentage point
     _last_pct = [-1]  # mutable container for closure
     diarization_done = [False]
+    _last_raw_fraction = [0.0]
+    _fraction_at_diar_done = [0.0]
 
     def _on_transcription_progress(segment_index: int, segment_end: float, audio_duration: float):
-        if not diarization_done[0]:
-            return
         if audio_duration <= 0:
             return
         fraction = min(segment_end / audio_duration, 1.0)
-        mapped = 0.35 + fraction * 0.55  # map 0.0-1.0 → 0.35-0.90
+        _last_raw_fraction[0] = fraction
+        mapped = _map_transcription_progress(
+            fraction, diarization_done[0], _fraction_at_diar_done[0],
+        )
         pct = int(mapped * 100)
         if pct > _last_pct[0]:
             _last_pct[0] = pct
@@ -222,7 +264,7 @@ def run_pipeline(
 
     if skip_diarization or use_channel_diarization:
         breakdown["diarization"] = _run_diarization()
-        _progress("diarization", 0.35)
+        _progress("diarization", 0.30)
         diarization_done[0] = True
         breakdown["transcription"] = _run_transcription()
     else:
@@ -232,7 +274,8 @@ def run_pipeline(
 
             # Diarization typically finishes first — report progress as it completes
             breakdown["diarization"] = diar_future.result()
-            _progress("diarization", 0.35)
+            _fraction_at_diar_done[0] = _last_raw_fraction[0]
+            _progress("diarization", 0.30)
             diarization_done[0] = True
 
             breakdown["transcription"] = trans_future.result()

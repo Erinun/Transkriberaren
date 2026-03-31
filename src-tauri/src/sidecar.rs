@@ -22,7 +22,7 @@ pub enum PipelineEvent {
     #[serde(rename = "progress")]
     Progress {
         stage: String,
-        percent: u32,
+        percent: i32,
         message: String,
     },
     #[serde(rename = "result")]
@@ -85,6 +85,7 @@ pub async fn run_python_pipeline(
     // Force Python to use UTF-8 for stdout/stderr (avoids cp1252 on Windows)
     cmd.env("PYTHONIOENCODING", "utf-8");
     cmd.env("PYTHONUTF8", "1");
+    cmd.env("PYTHONUNBUFFERED", "1");
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
 

@@ -36,6 +36,7 @@ interface PipelineState {
   stage: string;
   percent: number;
   message: string;
+  isIndeterminate: boolean;
   error: string | null;
   outputFiles: string[];
   summary: PipelineSummary | null;
@@ -51,6 +52,7 @@ const INITIAL_STATE: PipelineState = {
   stage: "",
   percent: 0,
   message: "",
+  isIndeterminate: false,
   error: null,
   outputFiles: [],
   summary: null,
@@ -73,12 +75,23 @@ export function usePipeline() {
       const data = event.payload;
 
       if (data.type === "progress") {
-        setState((s) => ({
-          ...s,
-          stage: data.stage,
-          percent: data.percent,
-          message: data.message,
-        }));
+        setState((s) => {
+          if (data.percent === -1) {
+            return {
+              ...s,
+              stage: data.stage,
+              message: data.message,
+              isIndeterminate: true,
+            };
+          }
+          return {
+            ...s,
+            stage: data.stage,
+            percent: data.percent,
+            message: data.message,
+            isIndeterminate: false,
+          };
+        });
       } else if (data.type === "result") {
         setState((s) => ({
           ...s,

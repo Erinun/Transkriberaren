@@ -9,11 +9,12 @@ import ProcessingView from "./components/ProcessingView";
 import ResultView from "./components/ResultView";
 import SettingsView from "./components/SettingsView";
 import RecordingView from "./components/RecordingView";
+import HistoryView from "./components/HistoryView";
 import { usePipeline, type PipelineSettings } from "./hooks/usePipeline";
-import { useHistory, type HistoryEntry } from "./hooks/useHistory";
+import { useHistory, type HistoryEntry, type OllamaResult } from "./hooks/useHistory";
 import { useOllamaStatus } from "./hooks/useOllama";
 
-type View = "dashboard" | "transcribe" | "processing" | "result" | "settings" | "recording";
+type View = "dashboard" | "transcribe" | "history" | "processing" | "result" | "settings" | "recording";
 type SidecarStatus = "starting" | "warming_up" | "ready" | "error";
 
 const NAV_ITEMS: { id: View; label: string }[] = [
@@ -35,8 +36,9 @@ function loadSettingsForRecording(): PipelineSettings {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const s = JSON.parse(raw);
-      // Migrera gammal default small → base
-      if (s.defaultModel === "KBLab/kb-whisper-small") {
+      // Migrera ogiltiga modeller → base
+      const validModels = ["KBLab/kb-whisper-tiny", "KBLab/kb-whisper-base", "KBLab/kb-whisper-small"];
+      if (s.defaultModel && !validModels.includes(s.defaultModel)) {
         s.defaultModel = "KBLab/kb-whisper-base";
         localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
       }
@@ -99,6 +101,9 @@ export default function App() {
 
   // Track viewing a history entry
   const [viewingHistory, setViewingHistory] = useState<HistoryEntry | null>(null);
+
+  // Track the current history entry ID (for saving ollama results)
+  const [currentEntryId, setCurrentEntryId] = useState<string | null>(null);
 
   // Track whether we already saved the current run to history
   const historySavedRef = useRef(false);
@@ -177,13 +182,21 @@ export default function App() {
     }
     if (pipeline.status === "done" && pipeline.mdContent && pipeline.summary && !historySavedRef.current) {
       historySavedRef.current = true;
-      history.addEntry(currentAudioName, pipeline.mdContent, pipeline.summary, pipeline.modelName, pipeline.wordCount);
+      const id = history.addEntry(currentAudioName, pipeline.mdContent, pipeline.summary, pipeline.modelName, pipeline.wordCount);
+      setCurrentEntryId(id);
     }
   }, [pipeline.status, pipeline.mdContent, pipeline.summary, activeView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleViewHistory = (entry: HistoryEntry) => {
     setViewingHistory(entry);
+    setCurrentEntryId(entry.id);
     setActiveView("result");
+  };
+
+  const handleOllamaComplete = (result: OllamaResult) => {
+    if (currentEntryId) {
+      history.saveOllamaResult(currentEntryId, result);
+    }
   };
 
   const sidecarReady = sidecarStatus === "ready" || sidecarStatus === "error";
@@ -203,7 +216,7 @@ export default function App() {
         wordCount: viewingHistory!.wordCount ?? 0,
         onBack: () => {
           setViewingHistory(null);
-          setActiveView("dashboard");
+          setActiveView("history");
         },
       }
     : {
@@ -294,14 +307,33 @@ export default function App() {
               diarizationAvailable={diarizationAvailable}
             />
           )}
+          {activeView === "history" && (
+            <HistoryView
+              entries={history.entries}
+              onView={handleViewHistory}
+              onRemove={history.removeEntry}
+            />
+          )}
           {activeView === "processing" && (
             <ProcessingView
               stage={pipeline.stage}
               percent={pipeline.percent}
               message={pipeline.message}
+              isIndeterminate={pipeline.isIndeterminate}
             />
           )}
-          {activeView === "result" && <ResultView {...resultProps} ollamaStatus={ollamaStatus} />}
+          {activeView === "result" && (
+            <ResultView
+              {...resultProps}
+              ollamaStatus={ollamaStatus}
+              onOllamaComplete={handleOllamaComplete}
+              savedOllamaResults={
+                currentEntryId
+                  ? history.entries.find((e) => e.id === currentEntryId)?.ollamaResults
+                  : undefined
+              }
+            />
+          )}
           {activeView === "settings" && <SettingsView ollamaStatus={ollamaStatus} />}
           {activeView === "recording" && (
             <RecordingView

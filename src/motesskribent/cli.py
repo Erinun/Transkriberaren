@@ -20,8 +20,6 @@ KNOWN_MODELS = [
     ("KBLab/kb-whisper-tiny", "tiny", "~160 MB", "Snabbast, bra kvalitet"),
     ("KBLab/kb-whisper-base", "base", "~240 MB", "Snabb, mycket bra kvalitet (rekommenderas)"),
     ("KBLab/kb-whisper-small", "small", "~460 MB", "Bra balans hastighet/kvalitet"),
-    ("KBLab/kb-whisper-medium", "medium", "~1.5 GB", "Bättre kvalitet, långsammare"),
-    ("KBLab/kb-whisper-large", "large", "~3 GB", "Bästa kvalitet, kräver mer minne"),
 ]
 
 
@@ -55,10 +53,11 @@ def _run_json_ipc(audio_file: Path, config):
     }
 
     def on_progress(step: str, fraction: float):
+        percent = -1 if fraction < 0 else round(fraction * 100)
         _emit_json({
             "type": "progress",
             "stage": step,
-            "percent": round(fraction * 100),
+            "percent": percent,
             "message": steps_sv.get(step, step),
         })
 
@@ -152,7 +151,8 @@ def transkribera(audio_file: Path, modell: str, talare: int | None,
 
         def on_progress(step: str, fraction: float):
             desc = steps.get(step, step)
-            progress.update(task, completed=fraction * 100, description=desc)
+            if fraction >= 0:
+                progress.update(task, completed=fraction * 100, description=desc)
 
         try:
             result = run_pipeline(audio_file, config, progress_callback=on_progress)

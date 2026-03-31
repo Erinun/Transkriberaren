@@ -26,8 +26,9 @@ function loadSettings(): Settings {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      // Migrera gammal default small → base
-      if (parsed.defaultModel === "KBLab/kb-whisper-small") {
+      // Migrera ogiltiga modeller → base
+      const validModels = ["KBLab/kb-whisper-tiny", "KBLab/kb-whisper-base", "KBLab/kb-whisper-small"];
+      if (parsed.defaultModel && !validModels.includes(parsed.defaultModel)) {
         parsed.defaultModel = "KBLab/kb-whisper-base";
         localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
       }

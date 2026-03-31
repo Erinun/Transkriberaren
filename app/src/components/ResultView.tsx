@@ -1,8 +1,9 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import ReactMarkdown from "react-markdown";
 import type { TranscriptionSegment } from "../hooks/usePipeline";
+import type { OllamaResult } from "../hooks/useHistory";
 import { useOllama, type OllamaStatus, type OllamaOptions } from "../hooks/useOllama";
 import { usePromptTemplates } from "../hooks/usePromptTemplates";
 import {
@@ -32,6 +33,8 @@ interface Props {
   wordCount: number;
   onRetranscribe?: () => void;
   ollamaStatus: OllamaStatus;
+  onOllamaComplete?: (result: OllamaResult) => void;
+  savedOllamaResults?: OllamaResult[];
 }
 
 type ViewMode = "transcription" | "segment";
@@ -117,6 +120,8 @@ export default function ResultView({
   wordCount,
   onRetranscribe,
   ollamaStatus,
+  onOllamaComplete,
+  savedOllamaResults,
 }: Props) {
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -124,6 +129,14 @@ export default function ResultView({
   const [contentView, setContentView] = useState<ContentView>("transcription");
   const [fontSize, setFontSize] = useState(14);
   const [showTimestamps, setShowTimestamps] = useState(true);
+
+  // Saved ollama result viewing (for history entries)
+  const [viewingSavedResult, setViewingSavedResult] = useState<OllamaResult | null>(
+    () => savedOllamaResults?.[0] ?? null,
+  );
+
+  // Track generating→done transition to auto-save
+  const wasGeneratingRef = useRef(false);
 
   // Ollama state
   const ollama = useOllama(ollamaStatus);
@@ -138,6 +151,24 @@ export default function ResultView({
       setSelectedTemplate(allTemplates[0]);
     }
   }, [allTemplates, selectedTemplate.id]);
+  // Detect generating→done and save result
+  useEffect(() => {
+    if (ollama.generating) {
+      wasGeneratingRef.current = true;
+    } else if (wasGeneratingRef.current && ollama.streamedText && !ollama.error) {
+      wasGeneratingRef.current = false;
+      if (onOllamaComplete && ollama.selectedModel) {
+        onOllamaComplete({
+          templateId: selectedTemplate.id,
+          templateName: selectedTemplate.name,
+          ollamaModel: ollama.selectedModel,
+          content: ollama.streamedText,
+          generatedAt: new Date().toISOString(),
+        });
+      }
+    }
+  }, [ollama.generating]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [customPrompt, setCustomPrompt] = useState("");
   const [extraContext, setExtraContext] = useState("");
   const [showContext, setShowContext] = useState(false);
@@ -213,8 +244,8 @@ export default function ResultView({
 
   const handleCopy = async () => {
     const textToCopy =
-      contentView === "ollama" && ollama.streamedText
-        ? ollama.streamedText
+      contentView === "ollama" && (ollama.streamedText || viewingSavedResult?.content)
+        ? (ollama.streamedText || viewingSavedResult?.content)
         : mdContent;
     if (!textToCopy) return;
     try {
@@ -319,15 +350,34 @@ export default function ResultView({
             <div className="space-y-3">
               <div className="flex items-center gap-2 mb-4">
                 <h3 className="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wide">
-                  {selectedTemplate.name}
+                  {ollama.streamedText
+                    ? selectedTemplate.name
+                    : viewingSavedResult?.templateName ?? selectedTemplate.name}
                 </h3>
                 {ollama.generating && (
                   <div className="w-2 h-2 rounded-full bg-[var(--color-primary)] animate-glow-pulse" />
                 )}
               </div>
-              {ollama.streamedText ? (
+              {/* Saved result dropdown (when multiple saved and no active generation) */}
+              {!ollama.streamedText && !ollama.generating && savedOllamaResults && savedOllamaResults.length > 1 && (
+                <select
+                  value={viewingSavedResult?.templateId ?? ""}
+                  onChange={(e) => {
+                    const r = savedOllamaResults.find((r) => r.templateId === e.target.value);
+                    if (r) setViewingSavedResult(r);
+                  }}
+                  className="px-2 py-1 rounded-lg glass-input text-xs bg-transparent text-[var(--color-text)] mb-2"
+                >
+                  {savedOllamaResults.map((r) => (
+                    <option key={r.templateId} value={r.templateId}>
+                      {r.templateName}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {(ollama.streamedText || viewingSavedResult?.content) ? (
                 <div className="prose prose-invert max-w-none leading-relaxed">
-                  <ReactMarkdown>{ollama.streamedText}</ReactMarkdown>
+                  <ReactMarkdown>{ollama.streamedText || viewingSavedResult?.content || ""}</ReactMarkdown>
                 </div>
               ) : ollama.generating ? (
                 <p className="text-[var(--color-text-muted)] text-sm">
@@ -427,7 +477,7 @@ export default function ResultView({
                 Visa transkribering
               </button>
             )}
-            {ollama.streamedText && contentView === "transcription" && (
+            {(ollama.streamedText || (savedOllamaResults && savedOllamaResults.length > 0)) && contentView === "transcription" && (
               <button
                 onClick={() => setContentView("ollama")}
                 className="mt-2 w-full px-3 py-1.5 rounded-lg text-xs glass hover:bg-white/5 transition-colors text-[var(--color-text-muted)]"

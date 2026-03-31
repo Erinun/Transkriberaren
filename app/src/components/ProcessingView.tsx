@@ -2,6 +2,7 @@ interface Props {
   stage: string;
   percent: number;
   message: string;
+  isIndeterminate?: boolean;
 }
 
 const STAGE_LABELS: Record<string, string> = {
@@ -11,7 +12,7 @@ const STAGE_LABELS: Record<string, string> = {
   formatting: "Formaterar output",
 };
 
-export default function ProcessingView({ stage, percent, message }: Props) {
+export default function ProcessingView({ stage, percent, message, isIndeterminate }: Props) {
   const label = STAGE_LABELS[stage] ?? message ?? "Startar...";
 
   return (
@@ -32,21 +33,43 @@ export default function ProcessingView({ stage, percent, message }: Props) {
         {/* Stage label */}
         <div>
           <p className="text-lg font-medium">{label}</p>
-          <p className="text-sm text-[var(--color-text-muted)] mt-1">{percent}%</p>
+          <p className="text-sm text-[var(--color-text-muted)] mt-1">
+            {isIndeterminate ? "Bearbetar..." : `${percent}%`}
+          </p>
         </div>
 
         {/* Progress bar */}
         <div className="w-full h-2 glass rounded-full overflow-hidden">
-          <div
-            className="h-full rounded-full transition-all duration-500 ease-out"
-            style={{
-              width: `${percent}%`,
-              background: "linear-gradient(90deg, #2563eb, #60a5fa)",
-              boxShadow: "0 0 12px rgba(37, 99, 235, 0.4)",
-            }}
-          />
+          {isIndeterminate ? (
+            <div
+              className="h-full rounded-full"
+              style={{
+                width: "40%",
+                background: "linear-gradient(90deg, #2563eb, #60a5fa)",
+                boxShadow: "0 0 12px rgba(37, 99, 235, 0.4)",
+                animation: "indeterminate-slide 1.5s ease-in-out infinite",
+              }}
+            />
+          ) : (
+            <div
+              className="h-full rounded-full transition-all duration-500 ease-out"
+              style={{
+                width: `${percent}%`,
+                background: "linear-gradient(90deg, #2563eb, #60a5fa)",
+                boxShadow: "0 0 12px rgba(37, 99, 235, 0.4)",
+              }}
+            />
+          )}
         </div>
       </div>
+
+      <style>{`
+        @keyframes indeterminate-slide {
+          0% { margin-left: 0%; }
+          50% { margin-left: 60%; }
+          100% { margin-left: 0%; }
+        }
+      `}</style>
     </div>
   );
 }

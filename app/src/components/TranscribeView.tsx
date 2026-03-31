@@ -9,7 +9,6 @@ interface Props {
   history: HistoryEntry[];
   onViewHistory: (entry: HistoryEntry) => void;
   diarizationAvailable: boolean;
-  transcribeOnly?: boolean;
 }
 
 const MODELS = [
@@ -39,8 +38,9 @@ function loadDefaultSettings() {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (raw) {
       const s = JSON.parse(raw);
-      // Migrera gammal default small → base
-      if (s.defaultModel === "KBLab/kb-whisper-small") {
+      // Migrera ogiltiga modeller → base
+      const validModels = ["KBLab/kb-whisper-tiny", "KBLab/kb-whisper-base", "KBLab/kb-whisper-small"];
+      if (s.defaultModel && !validModels.includes(s.defaultModel)) {
         s.defaultModel = "KBLab/kb-whisper-base";
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
       }
@@ -54,7 +54,7 @@ function loadDefaultSettings() {
   return defaults;
 }
 
-export default function TranscribeView({ onStart, history, onViewHistory, diarizationAvailable, transcribeOnly = false }: Props) {
+export default function TranscribeView({ onStart, history, onViewHistory, diarizationAvailable }: Props) {
   const defaults = loadDefaultSettings();
   const [filePath, setFilePath] = useState<string | null>(null);
   const [model, setModel] = useState(defaults.model);
@@ -94,7 +94,7 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
 
     onStart(filePath, {
       model,
-      numSpeakers: transcribeOnly ? 1 : (numSpeakers ? parseInt(numSpeakers) : null),
+      numSpeakers: numSpeakers ? parseInt(numSpeakers) : null,
       formats: fmtList,
       outputDir,
       vadEnabled,
@@ -106,14 +106,7 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
 
   return (
     <div className="max-w-xl mx-auto space-y-6 animate-fade-in">
-      <h2 className="text-2xl font-bold">
-        {transcribeOnly ? "Enbart transkription" : "Transkribera ljudfil"}
-      </h2>
-      {transcribeOnly && (
-        <p className="text-sm text-[var(--color-text-muted)] -mt-3">
-          Snabb transkribering utan talarseparering — hoppar over diariseringen.
-        </p>
-      )}
+      <h2 className="text-2xl font-bold">Transkribera ljudfil</h2>
 
       {/* File picker — drop zone style */}
       <div className="space-y-2">
@@ -195,29 +188,27 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
       </div>
 
       {/* Speakers */}
-      {!transcribeOnly && (
-        <div className="space-y-2">
-          <label className="block text-sm text-[var(--color-text-muted)]">Antal talare</label>
-          <input
-            type="number"
-            min={1}
-            max={20}
-            placeholder={diarizationAvailable ? "Auto" : "1"}
-            value={diarizationAvailable ? numSpeakers : ""}
-            onChange={(e) => setNumSpeakers(e.target.value)}
-            disabled={!diarizationAvailable}
-            className={`w-32 px-3 py-2 rounded-lg glass-input text-sm ${
-              !diarizationAvailable ? "opacity-50 cursor-not-allowed" : ""
-            }`}
-          />
-          {!diarizationAvailable && (
-            <p className="text-xs text-yellow-400">
-              Talarseparering ej tillgänglig — diariseringsmodellen kunde inte laddas.
-              Transkribering fungerar men utan talaridentifiering.
-            </p>
-          )}
-        </div>
-      )}
+      <div className="space-y-2">
+        <label className="block text-sm text-[var(--color-text-muted)]">Antal talare</label>
+        <input
+          type="number"
+          min={1}
+          max={20}
+          placeholder={diarizationAvailable ? "Auto" : "1"}
+          value={diarizationAvailable ? numSpeakers : ""}
+          onChange={(e) => setNumSpeakers(e.target.value)}
+          disabled={!diarizationAvailable}
+          className={`w-32 px-3 py-2 rounded-lg glass-input text-sm ${
+            !diarizationAvailable ? "opacity-50 cursor-not-allowed" : ""
+          }`}
+        />
+        {!diarizationAvailable && (
+          <p className="text-xs text-yellow-400">
+            Talarseparering ej tillgänglig — diariseringsmodellen kunde inte laddas.
+            Transkribering fungerar men utan talaridentifiering.
+          </p>
+        )}
+      </div>
 
       {/* Format */}
       <div className="space-y-2">
@@ -299,6 +290,14 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
                     {formatTime(entry.summary.total_duration)}
                     {" \u00b7 "}
                     {entry.summary.num_speakers} talare
+                    {entry.ollamaResults && entry.ollamaResults.length > 0 && (
+                      <>
+                        {" \u00b7 "}
+                        <span className="text-[var(--color-primary)]">
+                          {entry.ollamaResults.length} bearbetning{entry.ollamaResults.length > 1 ? "ar" : ""}
+                        </span>
+                      </>
+                    )}
                   </p>
                 </div>
                 <button

@@ -124,6 +124,7 @@ impl SidecarManager {
 
         cmd.env("PYTHONIOENCODING", "utf-8");
         cmd.env("PYTHONUTF8", "1");
+        cmd.env("PYTHONUNBUFFERED", "1");
 
         // Belt-and-suspenders: set HF env vars from Rust side for bundled exe.
         // Redundant with sidecar_entry.py but protects against cases where
