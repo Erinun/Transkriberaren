@@ -85,9 +85,10 @@ export default function DashboardView({ onNavigate, sidecarReady, onInfoClick, o
         <Logo size={64} />
         <h1 className="text-3xl font-bold tracking-tight">MötesSkribent</h1>
         <p className="text-[var(--color-text-muted)] text-sm max-w-lg text-center leading-relaxed mt-1">
-          Din lokala assistent för mötestranskribering.
-          Omvandla inspelningar till tydliga mötesprotokoll med automatisk talaridentifiering.
-          All bearbetning sker lokalt på din dator — ingen data lämnar din maskin.
+          Omvandla mötesinspelningar till tydliga mötesprotokoll — helt lokalt på din dator.
+          Välj en ljudfil, och MötesSkribent transkriberar talet med hjälp av svenska AI-modeller
+          och identifierar automatiskt vem som säger vad.
+          Fungerar för både digitala och fysiska möten. Ingen data lämnar din maskin.
         </p>
       </div>
 
@@ -106,6 +107,25 @@ export default function DashboardView({ onNavigate, sidecarReady, onInfoClick, o
             </p>
           </button>
         ))}
+      </div>
+
+      {/* Feedback */}
+      <div className="flex items-center gap-2 mt-8 text-xs text-[var(--color-text-muted)]">
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1.5}
+            d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"
+          />
+        </svg>
+        <span>Har du synpunkter eller förslag?</span>
+        <a
+          href="mailto:erik.nunez.astorga@vasteras.se?subject=Feedback%20-%20M%C3%B6tesSkribent"
+          className="text-[var(--color-primary)] hover:underline"
+        >
+          Skicka feedback
+        </a>
       </div>
 
       {/* Status indicators */}
