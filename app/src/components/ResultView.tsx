@@ -135,6 +135,11 @@ export default function ResultView({
     () => savedOllamaResults?.[0] ?? null,
   );
 
+  // Sync viewingSavedResult when switching between history entries
+  useEffect(() => {
+    setViewingSavedResult(savedOllamaResults?.[0] ?? null);
+  }, [savedOllamaResults]);
+
   // Track generating→done transition to auto-save
   const wasGeneratingRef = useRef(false);
 
@@ -144,6 +149,7 @@ export default function ResultView({
   const [selectedTemplate, setSelectedTemplate] = useState<PromptTemplate>(
     allTemplates[0],
   );
+  const generatingTemplateRef = useRef(selectedTemplate);
 
   // Revalidate selectedTemplate if it was removed
   useEffect(() => {
@@ -155,12 +161,13 @@ export default function ResultView({
   useEffect(() => {
     if (ollama.generating) {
       wasGeneratingRef.current = true;
+      generatingTemplateRef.current = selectedTemplate;
     } else if (wasGeneratingRef.current && ollama.streamedText && !ollama.error) {
       wasGeneratingRef.current = false;
       if (onOllamaComplete && ollama.selectedModel) {
         onOllamaComplete({
-          templateId: selectedTemplate.id,
-          templateName: selectedTemplate.name,
+          templateId: generatingTemplateRef.current.id,
+          templateName: generatingTemplateRef.current.name,
           ollamaModel: ollama.selectedModel,
           content: ollama.streamedText,
           generatedAt: new Date().toISOString(),
