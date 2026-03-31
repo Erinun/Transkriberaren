@@ -121,7 +121,7 @@ export default function DashboardView({ onNavigate, sidecarReady, onInfoClick, o
         </svg>
         <span>Har du synpunkter eller förslag?</span>
         <a
-          href="mailto:erik.nunez.astorga@vasteras.se?subject=Feedback%20-%20M%C3%B6tesSkribent"
+          href="mailto:Erik Nunez Astorga <erik.nunez.astorga@vasteras.se>?subject=Feedback%20-%20M%C3%B6tesSkribent"
           className="text-[var(--color-primary)] hover:underline"
         >
           Skicka feedback
