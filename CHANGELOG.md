@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.0] — 2026-03-31
+
+### Nya funktioner
+- Transkriptioner-knapp i navigeringsfältet
+- Förbättrad startsida med informationstext och feedback-länk
+
+### Buggfixar
+- Fixa stale closure vid sparning av Ollama-resultat
+- Ta bort Medium och Large från modellinformation
+
+### Bygg och distribution
+- Admin-fri installer: byt från offline-installer till WebView2 bootstrapper (~1.8 MB)
+- Minskad installationsstorlek (~158 MB mindre)
+- Synkade versionsnummer i alla konfigurationsfiler
+
 ## [0.4.3] — 2026-03-27
 
 ### Bygg och distribution

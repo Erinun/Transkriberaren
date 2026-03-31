@@ -70,10 +70,10 @@ jobs:
           robocopy dist\motesskribent-sidecar src-tauri\sidecar /E /DCOPY:DAT /COPY:DAT /NFL /NDL /NJH /NJS
           if ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE } else { exit 0 }
 
-      - name: Download WebView2 offline installer
+      - name: Download WebView2 bootstrapper
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?linkid=2124701" -OutFile "src-tauri\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?LinkId=2124703" -OutFile "src-tauri\MicrosoftEdgeWebview2Setup.exe"
 
       - name: Build Tauri app (without bundler)
         working-directory: src-tauri

@@ -6,7 +6,7 @@
 ;   iscc /DMyAppVersion=0.4.2 scripts\installer.iss   (override version)
 
 #ifndef MyAppVersion
-  #define MyAppVersion "0.4.4"
+  #define MyAppVersion "0.5.0"
 #endif
 
 #define MyAppName "MötesSkribent"
@@ -45,8 +45,8 @@ Source: "..\src-tauri\target\release\{#MyAppExeName}"; DestDir: "{app}"; Flags: 
 ; Sidecar (PyInstaller bundle + models)
 Source: "..\src-tauri\sidecar\*"; DestDir: "{app}\sidecar"; Flags: ignoreversion recursesubdirs createallsubdirs
 
-; WebView2 offline installer (installed if needed)
-Source: "..\src-tauri\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall nocompression
+; WebView2 bootstrapper (installed per-user if needed, ~1.8 MB, requires internet)
+Source: "..\src-tauri\MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall nocompression
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -81,12 +81,13 @@ begin
   begin
     if not IsWebView2Installed then
     begin
-      Log('WebView2 Runtime saknas, installerar...');
-      if not ShellExec('runas', ExpandConstant('{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe'),
+      Log('WebView2 Runtime saknas, installerar per-user via bootstrapper...');
+      if not Exec(ExpandConstant('{tmp}\MicrosoftEdgeWebview2Setup.exe'),
         '/silent /install', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
       begin
         MsgBox('Kunde inte starta WebView2-installern. ' +
           'MötesSkribent kräver WebView2 för att fungera.' + #13#10 + #13#10 +
+          'Bootstrappern kräver internetanslutning.' + #13#10 +
           'Ladda ner WebView2 manuellt från:' + #13#10 +
           'https://developer.microsoft.com/en-us/microsoft-edge/webview2/',
           mbError, MB_OK);
@@ -95,7 +96,8 @@ begin
       begin
         MsgBox('WebView2-installationen misslyckades.' + #13#10 + #13#10 +
           'MötesSkribent kräver WebView2 för att fungera.' + #13#10 +
-          'Ladda ner WebView2 manuellt från:' + #13#10 +
+          'Kontrollera internetanslutningen och försök igen, eller ' +
+          'ladda ner WebView2 manuellt från:' + #13#10 +
           'https://developer.microsoft.com/en-us/microsoft-edge/webview2/',
           mbError, MB_OK);
       end;
