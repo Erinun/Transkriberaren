@@ -9,14 +9,13 @@ interface Props {
   history: HistoryEntry[];
   onViewHistory: (entry: HistoryEntry) => void;
   diarizationAvailable: boolean;
+  transcribeOnly?: boolean;
 }
 
 const MODELS = [
-  { id: "KBLab/kb-whisper-tiny", label: "Tiny (~160 MB)", desc: "Snabbast" },
-  { id: "KBLab/kb-whisper-base", label: "Base (~240 MB)", desc: "Rekommenderas" },
-  { id: "KBLab/kb-whisper-small", label: "Small (~460 MB)", desc: "Bra balans" },
-  { id: "KBLab/kb-whisper-medium", label: "Medium (~1.5 GB)", desc: "Bättre kvalitet" },
-  { id: "KBLab/kb-whisper-large", label: "Large (~3 GB)", desc: "Bäst kvalitet" },
+  { id: "KBLab/kb-whisper-tiny", label: "Tiny (~160 MB)", desc: "Snabbast", tip: "Snabba anteckningar, korta möten (<15 min), enkel dialog med 1\u20132 talare" },
+  { id: "KBLab/kb-whisper-base", label: "Base (~240 MB)", desc: "Rekommenderas", tip: "De flesta möten \u2014 bra balans mellan hastighet och kvalitet. Fungerar bra för teammöten, intervjuer och workshops" },
+  { id: "KBLab/kb-whisper-small", label: "Small (~460 MB)", desc: "Bra balans", tip: "Längre möten med många talare, brusiga inspelningar, eller när hög noggrannhet krävs" },
 ];
 
 function formatTime(seconds: number): string {
@@ -55,7 +54,7 @@ function loadDefaultSettings() {
   return defaults;
 }
 
-export default function TranscribeView({ onStart, history, onViewHistory, diarizationAvailable }: Props) {
+export default function TranscribeView({ onStart, history, onViewHistory, diarizationAvailable, transcribeOnly = false }: Props) {
   const defaults = loadDefaultSettings();
   const [filePath, setFilePath] = useState<string | null>(null);
   const [model, setModel] = useState(defaults.model);
@@ -64,6 +63,7 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
   const [outputDir, setOutputDir] = useState("");
   const [vadEnabled, setVadEnabled] = useState(defaults.vadEnabled);
   const [speedProfile, setSpeedProfile] = useState(defaults.speedProfile);
+  const [showModelInfo, setShowModelInfo] = useState(false);
 
   useEffect(() => {
     invoke<string>("get_default_output_dir").then(setOutputDir);
@@ -94,7 +94,7 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
 
     onStart(filePath, {
       model,
-      numSpeakers: numSpeakers ? parseInt(numSpeakers) : null,
+      numSpeakers: transcribeOnly ? 1 : (numSpeakers ? parseInt(numSpeakers) : null),
       formats: fmtList,
       outputDir,
       vadEnabled,
@@ -106,7 +106,14 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
 
   return (
     <div className="max-w-xl mx-auto space-y-6 animate-fade-in">
-      <h2 className="text-2xl font-bold">Transkribera ljudfil</h2>
+      <h2 className="text-2xl font-bold">
+        {transcribeOnly ? "Enbart transkription" : "Transkribera ljudfil"}
+      </h2>
+      {transcribeOnly && (
+        <p className="text-sm text-[var(--color-text-muted)] -mt-3">
+          Snabb transkribering utan talarseparering — hoppar over diariseringen.
+        </p>
+      )}
 
       {/* File picker — drop zone style */}
       <div className="space-y-2">
@@ -126,7 +133,29 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
 
       {/* Model */}
       <div className="space-y-2">
-        <label className="block text-sm text-[var(--color-text-muted)]">Modell</label>
+        <div className="flex items-center gap-1.5">
+          <label className="block text-sm text-[var(--color-text-muted)]">Modell</label>
+          <button
+            type="button"
+            onClick={() => setShowModelInfo((v) => !v)}
+            className="w-4 h-4 rounded-full border border-[var(--color-text-muted)] flex items-center justify-center text-[10px] leading-none text-[var(--color-text-muted)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)] transition-colors"
+            title="Visa modellrekommendationer"
+          >
+            i
+          </button>
+        </div>
+        {showModelInfo && (
+          <div className="glass rounded-lg p-3 space-y-2">
+            <p className="text-xs font-medium text-[var(--color-text-muted)]">Vilken modell passar ditt möte?</p>
+            {MODELS.map((m) => (
+              <div key={m.id} className="text-xs text-[var(--color-text-muted)]">
+                <span className="font-medium text-[var(--color-text)]">{m.label.split(" ")[0]}</span>
+                {" \u2014 "}
+                {m.tip}
+              </div>
+            ))}
+          </div>
+        )}
         <select
           value={model}
           onChange={(e) => setModel(e.target.value)}
@@ -166,27 +195,29 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
       </div>
 
       {/* Speakers */}
-      <div className="space-y-2">
-        <label className="block text-sm text-[var(--color-text-muted)]">Antal talare</label>
-        <input
-          type="number"
-          min={1}
-          max={20}
-          placeholder={diarizationAvailable ? "Auto" : "1"}
-          value={diarizationAvailable ? numSpeakers : ""}
-          onChange={(e) => setNumSpeakers(e.target.value)}
-          disabled={!diarizationAvailable}
-          className={`w-32 px-3 py-2 rounded-lg glass-input text-sm ${
-            !diarizationAvailable ? "opacity-50 cursor-not-allowed" : ""
-          }`}
-        />
-        {!diarizationAvailable && (
-          <p className="text-xs text-yellow-400">
-            Talarseparering ej tillgänglig — diariseringsmodellen kunde inte laddas.
-            Transkribering fungerar men utan talaridentifiering.
-          </p>
-        )}
-      </div>
+      {!transcribeOnly && (
+        <div className="space-y-2">
+          <label className="block text-sm text-[var(--color-text-muted)]">Antal talare</label>
+          <input
+            type="number"
+            min={1}
+            max={20}
+            placeholder={diarizationAvailable ? "Auto" : "1"}
+            value={diarizationAvailable ? numSpeakers : ""}
+            onChange={(e) => setNumSpeakers(e.target.value)}
+            disabled={!diarizationAvailable}
+            className={`w-32 px-3 py-2 rounded-lg glass-input text-sm ${
+              !diarizationAvailable ? "opacity-50 cursor-not-allowed" : ""
+            }`}
+          />
+          {!diarizationAvailable && (
+            <p className="text-xs text-yellow-400">
+              Talarseparering ej tillgänglig — diariseringsmodellen kunde inte laddas.
+              Transkribering fungerar men utan talaridentifiering.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Format */}
       <div className="space-y-2">

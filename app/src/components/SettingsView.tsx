@@ -75,6 +75,8 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
   const [editTemplate, setEditTemplate] = useState("");
   const [creatingNew, setCreatingNew] = useState(false);
 
+  const [showModelInfo, setShowModelInfo] = useState(false);
+
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     setSettings((prev) => {
       const next = { ...prev, [key]: value };
@@ -141,7 +143,34 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
 
       {/* Default model */}
       <div className="space-y-2">
-        <label className="block text-sm text-[var(--color-text-muted)]">Standardmodell</label>
+        <div className="flex items-center gap-1.5">
+          <label className="block text-sm text-[var(--color-text-muted)]">Standardmodell</label>
+          <button
+            type="button"
+            onClick={() => setShowModelInfo((v) => !v)}
+            className="w-4 h-4 rounded-full border border-[var(--color-text-muted)] flex items-center justify-center text-[10px] leading-none text-[var(--color-text-muted)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)] transition-colors"
+            title="Visa modellrekommendationer"
+          >
+            i
+          </button>
+        </div>
+        {showModelInfo && (
+          <div className="glass rounded-lg p-3 space-y-2">
+            <p className="text-xs font-medium text-[var(--color-text-muted)]">Vilken modell passar ditt möte?</p>
+            <div className="text-xs text-[var(--color-text-muted)]">
+              <span className="font-medium text-[var(--color-text)]">Tiny</span>
+              {" \u2014 Snabba anteckningar, korta möten (<15 min), enkel dialog med 1\u20132 talare"}
+            </div>
+            <div className="text-xs text-[var(--color-text-muted)]">
+              <span className="font-medium text-[var(--color-text)]">Base</span>
+              {" \u2014 De flesta möten \u2014 bra balans mellan hastighet och kvalitet. Fungerar bra för teammöten, intervjuer och workshops"}
+            </div>
+            <div className="text-xs text-[var(--color-text-muted)]">
+              <span className="font-medium text-[var(--color-text)]">Small</span>
+              {" \u2014 Längre möten med många talare, brusiga inspelningar, eller när hög noggrannhet krävs"}
+            </div>
+          </div>
+        )}
         <select
           value={settings.defaultModel}
           onChange={(e) => update("defaultModel", e.target.value)}
@@ -150,8 +179,6 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
           <option value="KBLab/kb-whisper-tiny">Tiny (~160 MB) — snabbast</option>
           <option value="KBLab/kb-whisper-base">Base (~240 MB) — rekommenderas</option>
           <option value="KBLab/kb-whisper-small">Small (~460 MB)</option>
-          <option value="KBLab/kb-whisper-medium">Medium (~1.5 GB)</option>
-          <option value="KBLab/kb-whisper-large">Large (~3 GB)</option>
         </select>
       </div>
 
