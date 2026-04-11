@@ -133,29 +133,29 @@ export default function ResultView({
   const [fontSize, setFontSize] = useState(14);
   const [showTimestamps, setShowTimestamps] = useState(true);
 
+  // Ollama state (declared early so useEffects below can reference it)
+  const ollama = useOllama(ollamaStatus);
+
   // Saved ollama result viewing (for history entries)
   const [viewingSavedResult, setViewingSavedResult] = useState<OllamaResult | null>(
     () => savedOllamaResults?.[0] ?? null,
   );
 
   // Sync viewingSavedResult and contentView when switching between history entries
-  // Skip view reset if Ollama generation is actively in progress
+  // Skip view reset if Ollama generation is actively in progress or has unsaved text
   useEffect(() => {
     const hasSaved = savedOllamaResults && savedOllamaResults.length > 0;
     if (hasSaved) {
       setViewingSavedResult(savedOllamaResults[0]);
       setContentView("ollama");
-    } else if (!ollama.generating) {
+    } else if (!ollama.generating && !ollama.streamedText) {
       setViewingSavedResult(null);
       setContentView("transcription");
     }
-  }, [savedOllamaResults]);
+  }, [savedOllamaResults, ollama.generating, ollama.streamedText]);
 
   // Track generating→done transition to auto-save
   const wasGeneratingRef = useRef(false);
-
-  // Ollama state
-  const ollama = useOllama(ollamaStatus);
   const { templates: allTemplates } = usePromptTemplates();
   const [selectedTemplate, setSelectedTemplate] = useState<PromptTemplate>(
     allTemplates[0],
