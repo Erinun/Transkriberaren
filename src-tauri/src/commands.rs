@@ -1,5 +1,6 @@
 use crate::audio_capture::{self, AudioDevice, RecorderState, RecordingResult};
 use crate::meeting_detector::MeetingDetector;
+use crate::ollama::CancellationMap;
 use crate::sidecar::{run_python_pipeline, TranscriptionConfig};
 use crate::sidecar_manager::SidecarManager;
 use std::path::PathBuf;
@@ -105,6 +106,17 @@ pub async fn read_file_content(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+pub async fn write_binary_to_file(data_base64: String, destination: String) -> Result<(), String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&data_base64)
+        .map_err(|e| format!("Base64-avkodning misslyckades: {}", e))?;
+    tokio::fs::write(&destination, &bytes)
+        .await
+        .map_err(|e| format!("Kunde inte spara filen: {}", e))
+}
+
+#[tauri::command]
 pub async fn copy_file_to(source: String, destination: String) -> Result<(), String> {
     tokio::fs::copy(&source, &destination)
         .await
@@ -130,8 +142,28 @@ pub async fn ollama_generate(
     request_id: String,
     options: Option<crate::ollama::OllamaOptions>,
     base_url: String,
+    cancellation_map: State<'_, CancellationMap>,
 ) -> Result<String, String> {
-    crate::ollama::generate_streaming(&app, &model, &prompt, &request_id, options, &base_url).await
+    let cancelled = cancellation_map.register(&request_id);
+    let result = crate::ollama::generate_streaming(&app, &model, &prompt, &request_id, options, &base_url, cancelled).await;
+    cancellation_map.remove(&request_id);
+    result
+}
+
+#[tauri::command]
+pub async fn ollama_cancel(
+    request_id: String,
+    cancellation_map: State<'_, CancellationMap>,
+) -> Result<bool, String> {
+    Ok(cancellation_map.cancel(&request_id))
+}
+
+#[tauri::command]
+pub async fn ollama_cancel_all(
+    cancellation_map: State<'_, CancellationMap>,
+) -> Result<(), String> {
+    cancellation_map.cancel_all();
+    Ok(())
 }
 
 #[tauri::command]

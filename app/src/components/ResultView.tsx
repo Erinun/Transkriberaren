@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import ReactMarkdown from "react-markdown";
+import { generateDocxBase64 } from "../lib/generateDocx";
 import type { TranscriptionSegment } from "../hooks/usePipeline";
 import type { OllamaResult } from "../hooks/useHistory";
 import { useOllama, type OllamaStatus, type OllamaOptions } from "../hooks/useOllama";
@@ -231,9 +232,16 @@ export default function ResultView({
   };
 
   const handleSaveDocx = async () => {
-    if (!docxFile) return;
+    const content =
+      contentView === "ollama"
+        ? (ollama.streamedText || viewingSavedResult?.content)
+        : mdContent;
+    if (!content) return;
+
     const defaultName =
-      docxFile.split(/[\\/]/).pop() ?? "transkribering.docx";
+      contentView === "ollama"
+        ? `${(viewingSavedResult?.templateName ?? selectedTemplate.name).toLowerCase().replace(/\s+/g, "_")}.docx`
+        : "transkribering.docx";
     try {
       const dest = await save({
         defaultPath: defaultName,
@@ -241,7 +249,8 @@ export default function ResultView({
       });
       if (!dest) return;
       setSaving(true);
-      await invoke("copy_file_to", { source: docxFile, destination: dest });
+      const dataBase64 = await generateDocxBase64(content);
+      await invoke("write_binary_to_file", { dataBase64, destination: dest });
     } catch (err) {
       console.error("Could not save docx:", err);
     } finally {
@@ -509,7 +518,7 @@ export default function ResultView({
                   {saving ? "Sparar..." : "Spara som\u2026"}
                 </button>
               )}
-              {docxFile && (
+              {(mdContent || ollama.streamedText || viewingSavedResult?.content) && (
                 <button
                   onClick={handleSaveDocx}
                   disabled={saving}
@@ -737,26 +746,30 @@ export default function ResultView({
                   return null;
                 })()}
 
-                {/* Generate button */}
-                <button
-                  onClick={handleGenerate}
-                  disabled={
-                    ollama.generating ||
-                    !ollama.selectedModel ||
-                    !mdContent ||
-                    (selectedTemplate.isCustom && !customPrompt.trim())
-                  }
-                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] text-xs transition-all disabled:opacity-50 hover:shadow-[0_0_20px_rgba(37,99,235,0.25)] flex items-center justify-center gap-2"
-                >
-                  {ollama.generating ? (
-                    <>
-                      <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Genererar...
-                    </>
-                  ) : (
-                    "Bearbeta"
-                  )}
-                </button>
+                {/* Generate / Cancel button */}
+                {ollama.generating ? (
+                  <button
+                    onClick={() => ollama.cancel()}
+                    className="w-full px-3 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-xs transition-all hover:shadow-[0_0_20px_rgba(220,38,38,0.25)] flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor" />
+                    </svg>
+                    Avbryt
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleGenerate}
+                    disabled={
+                      !ollama.selectedModel ||
+                      !mdContent ||
+                      (selectedTemplate.isCustom && !customPrompt.trim())
+                    }
+                    className="w-full px-3 py-2 rounded-lg bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] text-xs transition-all disabled:opacity-50 hover:shadow-[0_0_20px_rgba(37,99,235,0.25)] flex items-center justify-center gap-2"
+                  >
+                    Bearbeta
+                  </button>
+                )}
               </div>
             )}
           </div>

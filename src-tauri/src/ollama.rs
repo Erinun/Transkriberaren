@@ -1,9 +1,55 @@
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter};
 use tokio::time::{timeout, Duration};
+
+/// Global map of active generation cancellation flags, keyed by request_id.
+#[derive(Default, Clone)]
+pub struct CancellationMap {
+    inner: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
+}
+
+impl CancellationMap {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// Register a new request and return its cancellation flag.
+    pub fn register(&self, request_id: &str) -> Arc<AtomicBool> {
+        let flag = Arc::new(AtomicBool::new(false));
+        self.inner.lock().unwrap().insert(request_id.to_string(), flag.clone());
+        flag
+    }
+
+    /// Cancel a request by setting its flag.
+    pub fn cancel(&self, request_id: &str) -> bool {
+        if let Some(flag) = self.inner.lock().unwrap().get(request_id) {
+            flag.store(true, Ordering::Relaxed);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Cancel all active requests.
+    pub fn cancel_all(&self) {
+        for flag in self.inner.lock().unwrap().values() {
+            flag.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Remove a request when done.
+    pub fn remove(&self, request_id: &str) {
+        self.inner.lock().unwrap().remove(request_id);
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OllamaModel {
@@ -84,6 +130,7 @@ pub async fn generate_streaming(
     request_id: &str,
     options: Option<OllamaOptions>,
     base_url: &str,
+    cancelled: Arc<AtomicBool>,
 ) -> Result<String, String> {
     let client = Client::builder()
         .connect_timeout(Duration::from_secs(10))
@@ -149,15 +196,36 @@ pub async fn generate_streaming(
     let mut pending_tokens = String::new();
     let mut last_emit = Instant::now();
     const BATCH_INTERVAL_MS: u128 = 80;
+    // Buffer for incomplete NDJSON lines split across HTTP chunks
+    let mut line_buffer = String::new();
 
-    const IDLE_TIMEOUT: Duration = Duration::from_secs(180);
+    const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 
     loop {
+        // Check cancellation before waiting for next chunk
+        if cancelled.load(Ordering::Relaxed) {
+            let msg = "Generering avbruten av användaren.".to_string();
+            seq += 1;
+            let _ = app.emit(
+                "ollama-event",
+                OllamaEvent {
+                    request_id: request_id.to_string(),
+                    event_type: "error".to_string(),
+                    seq,
+                    token: None,
+                    done: None,
+                    error: Some(msg.clone()),
+                    full_text: None,
+                },
+            );
+            return Err(msg);
+        }
+
         let chunk = match timeout(IDLE_TIMEOUT, stream.next()).await {
             Ok(Some(chunk)) => chunk,
             Ok(None) => break, // Stream ended normally
             Err(_) => {
-                let msg = "Ollama svarade inte inom 3 minuter. Modellen kan ha fastnat eller vara överbelastad. Försök igen med en mindre modell eller kortare text.".to_string();
+                let msg = "Ollama svarade inte inom 5 minuter. Modellen kan ha fastnat eller vara överbelastad. Försök igen med en mindre modell eller kortare text.".to_string();
                 seq += 1;
                 let _ = app.emit(
                     "ollama-event",
@@ -204,11 +272,14 @@ pub async fn generate_streaming(
             }
         };
 
-        let text = String::from_utf8_lossy(&chunk);
+        // Append chunk to line buffer — HTTP chunks may split NDJSON lines
+        line_buffer.push_str(&String::from_utf8_lossy(&chunk));
 
-        // Ollama streams NDJSON — each line is a JSON object
-        for line in text.lines() {
-            if line.trim().is_empty() {
+        // Process only complete lines (terminated by \n)
+        while let Some(newline_pos) = line_buffer.find('\n') {
+            let line: String = line_buffer.drain(..=newline_pos).collect();
+            let line = line.trim();
+            if line.is_empty() {
                 continue;
             }
             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(line) {
@@ -265,6 +336,47 @@ pub async fn generate_streaming(
                         },
                     );
                 }
+            }
+        }
+    }
+
+    // Flush any remaining data in line buffer (last line without trailing \n)
+    let remaining = line_buffer.trim();
+    if !remaining.is_empty() {
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(remaining) {
+            if let Some(token) = parsed["response"].as_str() {
+                full_text.push_str(token);
+                pending_tokens.push_str(token);
+            }
+            if parsed["done"].as_bool() == Some(true) {
+                if !pending_tokens.is_empty() {
+                    seq += 1;
+                    let _ = app.emit(
+                        "ollama-event",
+                        OllamaEvent {
+                            request_id: request_id.to_string(),
+                            event_type: "token".to_string(),
+                            seq,
+                            token: Some(std::mem::take(&mut pending_tokens)),
+                            done: None,
+                            error: None,
+                            full_text: None,
+                        },
+                    );
+                }
+                seq += 1;
+                let _ = app.emit(
+                    "ollama-event",
+                    OllamaEvent {
+                        request_id: request_id.to_string(),
+                        event_type: "done".to_string(),
+                        seq,
+                        token: None,
+                        done: Some(true),
+                        error: None,
+                        full_text: Some(full_text.clone()),
+                    },
+                );
             }
         }
     }

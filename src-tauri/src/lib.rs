@@ -6,7 +6,7 @@ mod sidecar;
 mod sidecar_manager;
 
 use audio_capture::RecorderState;
-use commands::{copy_file_to, get_default_output_dir, list_audio_devices, ollama_check_health, ollama_generate, ollama_list_models, open_file, pause_recording, read_file_content, resume_recording, run_transcription, set_meeting_detection, start_recording, stop_recording, write_text_to_file};
+use commands::{copy_file_to, get_default_output_dir, list_audio_devices, ollama_cancel, ollama_cancel_all, ollama_check_health, ollama_generate, ollama_list_models, open_file, pause_recording, read_file_content, resume_recording, run_transcription, set_meeting_detection, start_recording, stop_recording, write_binary_to_file, write_text_to_file};
 use meeting_detector::MeetingDetector;
 use sidecar_manager::SidecarManager;
 use tauri::{Emitter, Manager};
@@ -28,6 +28,7 @@ pub fn run() {
         .manage(RecorderState::new())
         .manage(SidecarManager::new())
         .manage(MeetingDetector::new())
+        .manage(ollama::CancellationMap::new())
         .setup(|app| {
             // --- System tray ---
             let show_item = MenuItem::with_id(app, "show", "Visa MötesSkribent", true, None::<&str>)?;
@@ -109,10 +110,13 @@ pub fn run() {
             resume_recording,
             read_file_content,
             copy_file_to,
+            write_binary_to_file,
             write_text_to_file,
             ollama_check_health,
             ollama_list_models,
             ollama_generate,
+            ollama_cancel,
+            ollama_cancel_all,
             set_meeting_detection,
         ])
         .build(tauri::generate_context!())

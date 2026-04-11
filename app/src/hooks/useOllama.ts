@@ -198,6 +198,15 @@ export function useOllama(status: OllamaStatus) {
     [status.selectedModel, status.ollamaUrl],
   );
 
+  const cancel = useCallback(async () => {
+    if (requestIdRef.current && generating) {
+      try {
+        await invoke("ollama_cancel", { requestId: requestIdRef.current });
+      } catch {}
+      setGenerating(false);
+    }
+  }, [generating]);
+
   const resetOutput = useCallback(() => {
     setStreamedText("");
     setError(null);
@@ -210,6 +219,7 @@ export function useOllama(status: OllamaStatus) {
     streamedText,
     error,
     generate,
+    cancel,
     resetOutput,
   };
 }
