@@ -139,12 +139,14 @@ export default function ResultView({
   );
 
   // Sync viewingSavedResult and contentView when switching between history entries
+  // Skip view reset if Ollama generation is actively in progress
   useEffect(() => {
     const hasSaved = savedOllamaResults && savedOllamaResults.length > 0;
-    setViewingSavedResult(hasSaved ? savedOllamaResults[0] : null);
     if (hasSaved) {
+      setViewingSavedResult(savedOllamaResults[0]);
       setContentView("ollama");
-    } else {
+    } else if (!ollama.generating && !ollama.streamedText) {
+      setViewingSavedResult(null);
       setContentView("transcription");
     }
   }, [savedOllamaResults]);
