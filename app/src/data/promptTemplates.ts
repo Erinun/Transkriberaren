@@ -126,7 +126,12 @@ export function buildPrompt(
 
   // Auto-wrap: mallar utan {transcription}-platshållare får transkriptionen tillagd automatiskt
   if (!template.template.includes("{transcription}")) {
-    return `${template.template}\n\nFormatera svaret med markdown (rubriker, fetstil, listor).\n\n${contextBlock}TRANSKRIBERING:\n${stripped}`;
+    let base = template.template;
+    if (base.includes("{context}")) {
+      base = base.replace("{context}", context ? `EXTRA KONTEXT:\n${context}` : "");
+      return `${base}\n\nFormatera svaret med markdown (rubriker, fetstil, listor).\n\nTRANSKRIBERING:\n${stripped}`;
+    }
+    return `${base}\n\nFormatera svaret med markdown (rubriker, fetstil, listor).\n\n${contextBlock}TRANSKRIBERING:\n${stripped}`;
   }
 
   // Legacy: inbyggda mallar med platshållare

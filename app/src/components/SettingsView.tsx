@@ -461,7 +461,7 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
                       <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5">
                         {isUser
                           ? "Transkriberingen läggs till automatiskt. Extra kontext kan läggas till i resultatvyn."
-                          : <>{"{transcription}"} = transkriberingen, {"{context}"} = extra kontext</>
+                          : <>Transkriberingen läggs till automatiskt. Använd {"{transcription}"} och {"{context}"} som platshållare för att styra placeringen.</>
                         }
                       </p>
                     </div>
