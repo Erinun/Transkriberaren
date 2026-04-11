@@ -251,31 +251,44 @@ export default function App() {
         <header className="flex items-center justify-between px-5 py-3 glass border-t-0 border-x-0 rounded-none">
           <button
             onClick={() => {
+              if (pipeline.status === "running" && activeView === "processing") return;
               setViewingHistory(null);
               setActiveView("dashboard");
             }}
-            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+            className={`flex items-center gap-2 transition-opacity ${
+              pipeline.status === "running" && activeView === "processing"
+                ? "opacity-50 cursor-not-allowed"
+                : "hover:opacity-80"
+            }`}
           >
             <Logo size={28} />
             <span className="text-lg font-semibold tracking-tight">MötesSkribent</span>
           </button>
           <nav className="flex gap-1 items-center">
-            {NAV_ITEMS.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setViewingHistory(null);
-                  setActiveView(item.id);
-                }}
-                className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
-                  activeView === item.id
-                    ? "bg-[var(--color-primary)] text-white"
-                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/5"
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
+            {NAV_ITEMS.map((item) => {
+              const isProcessing = pipeline.status === "running" && activeView === "processing";
+              const disabled = isProcessing && item.id !== "processing";
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    if (disabled) return;
+                    setViewingHistory(null);
+                    setActiveView(item.id);
+                  }}
+                  disabled={disabled}
+                  className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
+                    activeView === item.id
+                      ? "bg-[var(--color-primary)] text-white"
+                      : disabled
+                        ? "text-[var(--color-text-muted)]/40 cursor-not-allowed"
+                        : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/5"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
             <button
               onClick={() => setInfoOpen(true)}
               className="ml-2 w-8 h-8 rounded-full flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/5 transition-colors"

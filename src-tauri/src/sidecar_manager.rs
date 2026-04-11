@@ -9,6 +9,30 @@ use tokio::process::{Child, Command};
 use tokio::sync::{Mutex, Notify};
 use uuid::Uuid;
 
+/// Check if a process with the given PID is still alive (Windows).
+#[cfg(windows)]
+fn is_process_alive(pid: u32) -> bool {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{OpenProcess, GetExitCodeProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+
+    unsafe {
+        let handle = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+            Ok(h) => h,
+            Err(_) => return false,
+        };
+        let mut exit_code: u32 = 0;
+        let ok = GetExitCodeProcess(handle, &mut exit_code);
+        let _ = CloseHandle(handle);
+        ok.is_ok() && exit_code == 259 // STILL_ACTIVE
+    }
+}
+
+#[cfg(not(windows))]
+fn is_process_alive(pid: u32) -> bool {
+    // On Unix, signal 0 checks if process exists
+    unsafe { libc::kill(pid as i32, 0) == 0 }
+}
+
 /// A pending request waiting for its "end" sentinel.
 struct PendingRequest {
     /// Collects all events for this request (progress, result, error).
@@ -168,13 +192,16 @@ impl SidecarManager {
         let app_clone = app.clone();
         let dc = disconnected.clone();
         let rs = ready_signal.clone();
+        let child_pid = child.id();
         tokio::spawn(async move {
             let mut reader = BufReader::new(stdout);
+            let mut consecutive_errors: u32 = 0;
             loop {
                 let mut buf = Vec::new();
                 match reader.read_until(b'\n', &mut buf).await {
                     Ok(0) => break, // EOF — process exited
                     Ok(_) => {
+                        consecutive_errors = 0;
                         let line = String::from_utf8_lossy(&buf).trim().to_string();
                         if line.is_empty() {
                             continue;
@@ -218,7 +245,26 @@ impl SidecarManager {
                             }
                         }
                     }
-                    Err(_) => break,
+                    Err(e) => {
+                        consecutive_errors += 1;
+                        log::warn!("Sidecar stdout read error #{}: {}", consecutive_errors, e);
+
+                        // Check if the process is actually dead before giving up
+                        let alive = child_pid.map(|pid| is_process_alive(pid)).unwrap_or(false);
+
+                        if !alive || consecutive_errors >= 3 {
+                            log::error!(
+                                "Sidecar read giving up (process alive={}, errors={})",
+                                alive, consecutive_errors
+                            );
+                            break;
+                        }
+
+                        // Transient error — brief pause then retry
+                        log::info!("Sidecar process still alive, retrying read...");
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                        continue;
+                    }
                 }
             }
             // EOF reached — process died or closed stdout
@@ -355,7 +401,7 @@ impl SidecarManager {
                 }
                 // Clear the dead process so next call will respawn
                 *self.inner.lock().await = None;
-                return Err("Sidecar-processen avslutades oväntat".to_string());
+                return Err("Transkriberingen avbröts — anslutningen till bakgrundsprocessen förlorades. Försök igen.".to_string());
             }
             Ok(false) => {
                 // Normal completion — check for error events
