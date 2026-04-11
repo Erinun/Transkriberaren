@@ -302,6 +302,18 @@ def run_pipeline(
     # 5. Merga korta segment
     segments = merge_short_segments(segments)
 
+    # Ometikettera talare i kronologisk ordning (Talare 1, 2, 3...)
+    # Körs efter merge så att num_speakers reflekterar faktiskt antal unika talare
+    label_map: dict[str, str] = {}
+    counter = 0
+    for seg in segments:
+        if seg.speaker_id and seg.speaker_id not in label_map:
+            counter += 1
+            label_map[seg.speaker_id] = f"Talare {counter}"
+        if seg.speaker_id:
+            seg.speaker_label = label_map[seg.speaker_id]
+    num_speakers = len(label_map) or num_speakers
+
     # 6. Formatera och spara
     t0 = time.perf_counter()
     metadata = {

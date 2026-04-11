@@ -144,6 +144,18 @@ def diarize(
 
     result = _lib_diarize(**kwargs)
 
+    # Logga diagnostikinfo om talaruppskattning
+    if hasattr(result, "estimation_details") and result.estimation_details:
+        details = result.estimation_details
+        logger.info(
+            "Talaruppskattning: metod=%s, best_k=%d, cosine_sim_p10=%s, reason=%s",
+            details.method, details.best_k,
+            f"{details.cosine_sim_p10:.3f}" if details.cosine_sim_p10 is not None else "N/A",
+            details.reason or "auto",
+        )
+        if details.k_bics:
+            logger.debug("BIC-värden per k: %s", details.k_bics)
+
     # Konvertera till SpeakerSegment-lista
     raw_segments: list[SpeakerSegment] = []
     for seg in result.segments:

@@ -106,7 +106,7 @@ class TestPipelineConfig:
         assert cfg.batch_size == 16
         assert cfg.speed_profile == "balanced"
         assert cfg.vad_enabled is True
-        assert cfg.min_speakers == 2
+        assert cfg.min_speakers == 1
         assert cfg.max_speakers == 10
         assert cfg.output_formats == ["markdown", "json"]
 
