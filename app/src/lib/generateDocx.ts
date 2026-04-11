@@ -253,16 +253,15 @@ export function markdownToDocx(markdown: string): Document {
       continue;
     }
 
-    // Full-line italic: *text*
-    if (line.startsWith("*") && line.endsWith("*") && !line.startsWith("**")) {
-      const text = line.slice(1, -1);
-      // Handle trailing whitespace markers (e.g. "  " at end of line)
-      const cleanText = text.replace(/\s{2,}$/, "");
+    // Full-line italic: *text* (trimEnd handles markdown trailing spaces)
+    const trimmedLine = line.trimEnd();
+    if (trimmedLine.startsWith("*") && trimmedLine.endsWith("*") && !trimmedLine.startsWith("**")) {
+      const text = trimmedLine.slice(1, -1);
       paragraphs.push(
         new Paragraph({
           children: [
             new TextRun({
-              text: cleanText,
+              text: text,
               font: "Calibri",
               size: 20, // 10pt for footer-style
               italics: true,
