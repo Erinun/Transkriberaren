@@ -117,11 +117,19 @@ export function buildPrompt(
   customPrompt?: string,
 ): string {
   const stripped = stripMarkdownForLLM(transcription);
+  const contextBlock = context ? `EXTRA KONTEXT:\n${context}\n\n` : "";
 
   if (template.isCustom) {
     const base = customPrompt ?? "";
-    return `${base}\n\nFormatera svaret med markdown (rubriker, fetstil, listor).\n\nTRANSKRIBERING:\n${stripped}`;
+    return `${base}\n\nFormatera svaret med markdown (rubriker, fetstil, listor).\n\n${contextBlock}TRANSKRIBERING:\n${stripped}`;
   }
+
+  // Auto-wrap: mallar utan {transcription}-platshållare får transkriptionen tillagd automatiskt
+  if (!template.template.includes("{transcription}")) {
+    return `${template.template}\n\nFormatera svaret med markdown (rubriker, fetstil, listor).\n\n${contextBlock}TRANSKRIBERING:\n${stripped}`;
+  }
+
+  // Legacy: inbyggda mallar med platshållare
   let prompt = template.template;
   prompt = prompt.replace("{transcription}", stripped);
   prompt = prompt.replace(

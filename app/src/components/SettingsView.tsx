@@ -449,7 +449,9 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
                       />
                     </div>
                     <div>
-                      <label className="text-[11px] text-[var(--color-text-muted)] block mb-0.5">Promptmall</label>
+                      <label className="text-[11px] text-[var(--color-text-muted)] block mb-0.5">
+                        {isUser ? "Instruktion" : "Promptmall"}
+                      </label>
                       <textarea
                         value={editTemplate}
                         onChange={(e) => setEditTemplate(e.target.value)}
@@ -457,7 +459,10 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
                         className="w-full px-2 py-1.5 rounded-lg glass-input text-sm resize-none font-mono"
                       />
                       <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5">
-                        {"{transcription}"} = transkriberingen, {"{context}"} = extra kontext
+                        {isUser
+                          ? "Transkriberingen läggs till automatiskt. Extra kontext kan läggas till i resultatvyn."
+                          : <>{"{transcription}"} = transkriberingen, {"{context}"} = extra kontext</>
+                        }
                       </p>
                     </div>
                     <div className="flex gap-2">
@@ -504,16 +509,16 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
               />
             </div>
             <div>
-              <label className="text-[11px] text-[var(--color-text-muted)] block mb-0.5">Promptmall</label>
+              <label className="text-[11px] text-[var(--color-text-muted)] block mb-0.5">Instruktion</label>
               <textarea
                 value={editTemplate}
                 onChange={(e) => setEditTemplate(e.target.value)}
-                placeholder="Skriv din promptmall här. Använd {transcription} och {context} som platshållare."
+                placeholder="Beskriv vad du vill att AI:n ska göra med transkriberingen, t.ex. 'Sammanfatta mötets viktigaste punkter och lista alla beslut'"
                 rows={6}
                 className="w-full px-2 py-1.5 rounded-lg glass-input text-sm resize-none font-mono"
               />
               <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5">
-                {"{transcription}"} = transkriberingen, {"{context}"} = extra kontext
+                Transkriberingen läggs till automatiskt. Extra kontext kan läggas till i resultatvyn.
               </p>
             </div>
             <div className="flex gap-2">
