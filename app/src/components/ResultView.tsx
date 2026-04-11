@@ -127,7 +127,9 @@ export default function ResultView({
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("transcription");
-  const [contentView, setContentView] = useState<ContentView>("transcription");
+  const [contentView, setContentView] = useState<ContentView>(
+    () => (savedOllamaResults && savedOllamaResults.length > 0) ? "ollama" : "transcription"
+  );
   const [fontSize, setFontSize] = useState(14);
   const [showTimestamps, setShowTimestamps] = useState(true);
 
@@ -136,9 +138,13 @@ export default function ResultView({
     () => savedOllamaResults?.[0] ?? null,
   );
 
-  // Sync viewingSavedResult when switching between history entries
+  // Sync viewingSavedResult and contentView when switching between history entries
   useEffect(() => {
-    setViewingSavedResult(savedOllamaResults?.[0] ?? null);
+    const hasSaved = savedOllamaResults && savedOllamaResults.length > 0;
+    setViewingSavedResult(hasSaved ? savedOllamaResults[0] : null);
+    if (hasSaved) {
+      setContentView("ollama");
+    }
   }, [savedOllamaResults]);
 
   // Track generating→done transition to auto-save
