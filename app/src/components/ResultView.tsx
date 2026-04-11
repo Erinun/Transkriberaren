@@ -145,7 +145,7 @@ export default function ResultView({
     if (hasSaved) {
       setViewingSavedResult(savedOllamaResults[0]);
       setContentView("ollama");
-    } else if (!ollama.generating && !ollama.streamedText) {
+    } else if (!ollama.generating) {
       setViewingSavedResult(null);
       setContentView("transcription");
     }
