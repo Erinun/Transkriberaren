@@ -35,7 +35,7 @@ class PipelineConfig:
     batch_size: int = 16
     vad_enabled: bool = True
     num_speakers: int | None = None
-    min_speakers: int = 2
+    min_speakers: int = 1
     max_speakers: int = 10
     output_dir: Path = field(default_factory=lambda: Path("output"))
     output_formats: list[str] = field(default_factory=lambda: ["markdown", "json"])

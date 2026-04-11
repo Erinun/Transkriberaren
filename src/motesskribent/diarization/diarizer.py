@@ -108,7 +108,7 @@ def _assign_labels(segments: list[SpeakerSegment]) -> list[SpeakerSegment]:
 def diarize(
     audio_path: Path | str,
     num_speakers: int | None = None,
-    min_speakers: int = 2,
+    min_speakers: int = 1,
     max_speakers: int = 10,
     merge_gap: float = 1.5,
 ) -> DiarizationResult:

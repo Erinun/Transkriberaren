@@ -85,9 +85,8 @@ export default function DashboardView({ onNavigate, sidecarReady, onInfoClick, o
         <Logo size={64} />
         <h1 className="text-3xl font-bold tracking-tight">MötesSkribent</h1>
         <p className="text-[var(--color-text-muted)] text-sm max-w-lg text-center leading-relaxed mt-1">
-          Omvandla mötesinspelningar till tydliga mötesprotokoll — helt lokalt på din dator.
-          Välj en ljudfil, och MötesSkribent transkriberar talet med hjälp av svenska AI-modeller
-          och identifierar automatiskt vem som säger vad.
+          Omvandla dina mötesinspelningar till tydliga mötesprotokoll — helt lokalt på din dator.
+          Klicka på spela in och låt Möteskribenten ta dina anteckningar och låt en lokal AI-modell bearbeta dem.
           Fungerar för både digitala och fysiska möten. Ingen data lämnar din maskin.
         </p>
       </div>

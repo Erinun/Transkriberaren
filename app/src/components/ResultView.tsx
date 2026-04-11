@@ -182,8 +182,6 @@ export default function ResultView({
   const [showContext, setShowContext] = useState(false);
 
   const mdFile = outputFiles.find((f) => f.endsWith(".md"));
-  const docxFile = outputFiles.find((f) => f.endsWith(".docx"));
-
   const hasSegments = segments.length > 0;
 
   // Group speakers for unique colors

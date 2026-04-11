@@ -2484,6 +2484,7 @@ dependencies = [
 name = "motesskribent-app"
 version = "0.5.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "cpal",
  "dirs 5.0.1",
