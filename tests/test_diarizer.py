@@ -4,11 +4,14 @@ from pathlib import Path
 
 import pytest
 
+import numpy as np
+
 from motesskribent.diarization.diarizer import (
     DiarizationResult,
     SpeakerSegment,
     _assign_labels,
     _merge_segments,
+    _merge_similar_speakers,
 )
 
 TEST_WAV = Path(__file__).parent / "fixtures" / "test_meeting.wav"
@@ -107,6 +110,118 @@ class TestAssignLabels:
         _assign_labels(segs)
         assert segs[0].speaker_label == "Talare 1"
         assert segs[1].speaker_label == "Talare 1"
+
+
+class TestMergeSimilarSpeakers:
+    """Enhetstester för _merge_similar_speakers — kräver ingen modell."""
+
+    def test_single_label_unchanged(self):
+        embeddings = np.random.randn(5, 256).astype(np.float32)
+        labels = np.zeros(5, dtype=int)
+        result = _merge_similar_speakers(embeddings, labels)
+        assert len(np.unique(result)) == 1
+
+    def test_six_labels_same_speaker_merged_to_one(self):
+        """6 labels men alla embeddings från samma fördelning → ska bli 1 talare."""
+        rng = np.random.RandomState(42)
+        base = rng.randn(256).astype(np.float32)
+        base = base / np.linalg.norm(base)
+        # 6 "talare" med 5 embeddings var, alla nära base
+        embeddings = []
+        labels = []
+        for speaker_id in range(6):
+            for _ in range(5):
+                noise = rng.randn(256).astype(np.float32) * 0.05
+                embeddings.append(base + noise)
+                labels.append(speaker_id)
+        embeddings = np.array(embeddings)
+        labels = np.array(labels)
+
+        result = _merge_similar_speakers(embeddings, labels, similarity_threshold=0.55)
+        assert len(np.unique(result)) == 1
+
+    def test_two_distinct_speakers_kept_separate(self):
+        """2 talare med tydligt olika embeddings → ska förbli 2."""
+        rng = np.random.RandomState(42)
+        speaker_a = rng.randn(256).astype(np.float32)
+        speaker_a = speaker_a / np.linalg.norm(speaker_a)
+        speaker_b = -speaker_a  # maximalt annorlunda
+
+        embeddings = []
+        labels = []
+        for _ in range(10):
+            noise = rng.randn(256).astype(np.float32) * 0.05
+            embeddings.append(speaker_a + noise)
+            labels.append(0)
+        for _ in range(10):
+            noise = rng.randn(256).astype(np.float32) * 0.05
+            embeddings.append(speaker_b + noise)
+            labels.append(1)
+        embeddings = np.array(embeddings)
+        labels = np.array(labels)
+
+        result = _merge_similar_speakers(embeddings, labels, similarity_threshold=0.55)
+        assert len(np.unique(result)) == 2
+
+    def test_three_labels_two_similar_one_different(self):
+        """3 labels: 0 och 1 lika, 2 annorlunda → ska bli 2 talare."""
+        rng = np.random.RandomState(42)
+        speaker_a = rng.randn(256).astype(np.float32)
+        speaker_a = speaker_a / np.linalg.norm(speaker_a)
+        speaker_b = -speaker_a
+
+        embeddings = []
+        labels = []
+        # Label 0 och 1: båda nära speaker_a
+        for lbl in [0, 1]:
+            for _ in range(5):
+                noise = rng.randn(256).astype(np.float32) * 0.05
+                embeddings.append(speaker_a + noise)
+                labels.append(lbl)
+        # Label 2: nära speaker_b
+        for _ in range(5):
+            noise = rng.randn(256).astype(np.float32) * 0.05
+            embeddings.append(speaker_b + noise)
+            labels.append(2)
+
+        embeddings = np.array(embeddings)
+        labels = np.array(labels)
+
+        result = _merge_similar_speakers(embeddings, labels, similarity_threshold=0.55)
+        assert len(np.unique(result)) == 2
+        # Label 0 och 1 ska ha samma label efter merge
+        assert result[0] == result[5]  # label 0 och label 1 sammanslagna
+        # Label 2 ska vara annorlunda
+        assert result[0] != result[10]
+
+    def test_empty_embeddings(self):
+        embeddings = np.array([]).reshape(0, 256)
+        labels = np.array([], dtype=int)
+        result = _merge_similar_speakers(embeddings, labels)
+        assert len(result) == 0
+
+    def test_labels_renumbered_from_zero(self):
+        """After merge, labels should be renumbered 0, 1, 2, ..."""
+        rng = np.random.RandomState(42)
+        base = rng.randn(256).astype(np.float32)
+        base = base / np.linalg.norm(base)
+
+        embeddings = []
+        labels = []
+        # Speakers 0,1,2 all same → merge to 1
+        for lbl in [0, 1, 2]:
+            for _ in range(5):
+                noise = rng.randn(256).astype(np.float32) * 0.05
+                embeddings.append(base + noise)
+                labels.append(lbl)
+
+        embeddings = np.array(embeddings)
+        labels = np.array(labels)
+
+        result = _merge_similar_speakers(embeddings, labels, similarity_threshold=0.55)
+        unique = np.unique(result)
+        assert len(unique) == 1
+        assert unique[0] == 0  # renumbered to 0
 
 
 @pytest.mark.skipif(
