@@ -10,6 +10,7 @@ import ResultView from "./components/ResultView";
 import SettingsView from "./components/SettingsView";
 import RecordingView from "./components/RecordingView";
 import HistoryView from "./components/HistoryView";
+import { ToastProvider, useToast } from "./components/Toast";
 import { usePipeline, type PipelineSettings } from "./hooks/usePipeline";
 import { useHistory, type HistoryEntry, type OllamaResult } from "./hooks/useHistory";
 import { useOllamaStatus } from "./hooks/useOllama";
@@ -74,6 +75,15 @@ function loadSettingsForRecording(): PipelineSettings {
 }
 
 export default function App() {
+  return (
+    <ToastProvider>
+      <AppInner />
+    </ToastProvider>
+  );
+}
+
+function AppInner() {
+  const { showToast } = useToast();
   const [activeView, setActiveView] = useState<View>("dashboard");
   const [recordingSettings, setRecordingSettings] = useState<PipelineSettings>(
     loadSettingsForRecording
@@ -108,6 +118,8 @@ export default function App() {
 
   // Track whether we already saved the current run to history
   const historySavedRef = useRef(false);
+  // Track whether we already showed the toast for the current run
+  const toastShownRef = useRef(false);
 
   // Listen for sidecar status events
   useEffect(() => {
@@ -160,6 +172,7 @@ export default function App() {
     setCurrentAudioName(name);
     setViewingHistory(null);
     historySavedRef.current = false;
+    toastShownRef.current = false;
     setActiveView("processing");
     pipeline.start(filePath, settings);
   };
@@ -172,6 +185,7 @@ export default function App() {
     setCurrentAudioName(name);
     setViewingHistory(null);
     historySavedRef.current = false;
+    toastShownRef.current = false;
     setActiveView("processing");
     pipeline.start(filePath, finalSettings);
   };
@@ -185,6 +199,14 @@ export default function App() {
       historySavedRef.current = true;
       const id = history.addEntry(currentAudioName, pipeline.mdContent, pipeline.summary, pipeline.modelName, pipeline.wordCount);
       setCurrentEntryId(id);
+      if (!toastShownRef.current) {
+        toastShownRef.current = true;
+        showToast("Transkribering klar!", "success");
+      }
+    }
+    if (pipeline.status === "error" && !toastShownRef.current) {
+      toastShownRef.current = true;
+      showToast("Transkribering misslyckades", "error");
     }
   }, [pipeline.status, pipeline.mdContent, pipeline.summary, activeView]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -198,6 +220,7 @@ export default function App() {
     if (currentEntryId) {
       history.saveOllamaResult(currentEntryId, result);
     }
+    showToast("Bearbetning klar!", "success");
   };
 
   const sidecarReady = sidecarStatus === "ready" || sidecarStatus === "error";

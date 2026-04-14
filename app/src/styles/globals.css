@@ -185,3 +185,34 @@ select option:checked {
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.1);
 }
+
+/* Toast notifications */
+.toast-enter {
+  animation: toastIn 0.35s ease-out;
+}
+
+.toast-exit {
+  animation: toastOut 0.5s ease-in forwards;
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes toastOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
