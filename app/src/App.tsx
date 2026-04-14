@@ -11,6 +11,7 @@ import SettingsView from "./components/SettingsView";
 import RecordingView from "./components/RecordingView";
 import HistoryView from "./components/HistoryView";
 import { ToastProvider, useToast } from "./components/Toast";
+import UpdateChecker from "./components/UpdateChecker";
 import { usePipeline, type PipelineSettings } from "./hooks/usePipeline";
 import { useHistory, type HistoryEntry, type OllamaResult } from "./hooks/useHistory";
 import { useOllamaStatus } from "./hooks/useOllama";
@@ -277,6 +278,7 @@ function AppInner() {
 
   return (
     <div className="flex flex-col h-screen">
+      <UpdateChecker />
       {/* Header */}
       {showHeader && (
         <header className="flex items-center justify-between px-5 py-3 glass border-t-0 border-x-0 rounded-none">

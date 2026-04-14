@@ -19,6 +19,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(
             tauri_plugin_log::Builder::new()
                 .max_file_size(5_000_000) // 5 MB
