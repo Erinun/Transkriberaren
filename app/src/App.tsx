@@ -155,6 +155,9 @@ function AppInner() {
     let cancelled = false;
     listen("meeting-detected", () => {
       if (cancelled) return;
+      // If pipeline is running, mark it as no longer active so the completion
+      // effect won't force-navigate back to "result"
+      pipelineActiveRef.current = false;
       setActiveView("recording");
     }).then((fn) => {
       if (cancelled) fn(); else unlisten = fn;
