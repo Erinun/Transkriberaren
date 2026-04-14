@@ -42,27 +42,53 @@ const ICON: Record<ToastType, React.ReactNode> = {
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextId = useRef(0);
+  const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>[]>>(new Map());
+
+  // Cleanup all timers on unmount
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach((timers) => timers.forEach(clearTimeout));
+      timersRef.current.clear();
+    };
+  }, []);
+
+  const clearTimersForToast = useCallback((id: number) => {
+    const timers = timersRef.current.get(id);
+    if (timers) {
+      timers.forEach(clearTimeout);
+      timersRef.current.delete(id);
+    }
+  }, []);
 
   const showToast = useCallback((message: string, type: ToastType = "info") => {
     const id = nextId.current++;
     setToasts((prev) => [...prev, { id, message, type, exiting: false }]);
 
     // Start exit animation after 3.5s, remove after 4s
-    setTimeout(() => {
+    const t1 = setTimeout(() => {
       setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, exiting: true } : t)));
     }, 3500);
-    setTimeout(() => {
+    const t2 = setTimeout(() => {
+      timersRef.current.delete(id);
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4000);
+    timersRef.current.set(id, [t1, t2]);
   }, []);
+
+  const handleDismiss = useCallback((id: number) => {
+    clearTimersForToast(id);
+    setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, exiting: true } : t)));
+    const t = setTimeout(() => {
+      timersRef.current.delete(id);
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 500);
+    timersRef.current.set(id, [t]);
+  }, [clearTimersForToast]);
 
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <ToastContainer toasts={toasts} onDismiss={(id) => {
-        setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, exiting: true } : t)));
-        setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 500);
-      }} />
+      <ToastContainer toasts={toasts} onDismiss={handleDismiss} />
     </ToastContext.Provider>
   );
 }
