@@ -52,8 +52,6 @@ export default function UpdateChecker() {
           if (totalLength > 0) {
             setProgress(Math.round((downloaded / totalLength) * 100));
           }
-        } else if (event.event === "Finished") {
-          setState("ready");
         }
       });
 
@@ -64,7 +62,11 @@ export default function UpdateChecker() {
   };
 
   const handleRelaunch = async () => {
-    await relaunch();
+    try {
+      await relaunch();
+    } catch {
+      setState("error");
+    }
   };
 
   if (state === "idle") return null;
