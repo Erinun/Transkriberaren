@@ -148,11 +148,11 @@ export default function ResultView({
     if (hasSaved) {
       setViewingSavedResult(savedOllamaResults[0]);
       setContentView("ollama");
-    } else if (!ollama.generating && !ollama.streamedText) {
+    } else if (!ollama.generating && !ollama.streamedText && !ollama.error) {
       setViewingSavedResult(null);
       setContentView("transcription");
     }
-  }, [savedOllamaResults, ollama.generating, ollama.streamedText]);
+  }, [savedOllamaResults, ollama.generating, ollama.streamedText, ollama.error]);
 
   // Track generating→done transition to auto-save
   const wasGeneratingRef = useRef(false);

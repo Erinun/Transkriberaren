@@ -120,6 +120,8 @@ function AppInner() {
   const historySavedRef = useRef(false);
   // Track whether we already showed the toast for the current run
   const toastShownRef = useRef(false);
+  // Track whether pipeline was started in this session (robust against view changes during processing)
+  const pipelineActiveRef = useRef(false);
 
   // Listen for sidecar status events
   useEffect(() => {
@@ -173,6 +175,7 @@ function AppInner() {
     setViewingHistory(null);
     historySavedRef.current = false;
     toastShownRef.current = false;
+    pipelineActiveRef.current = true;
     setActiveView("processing");
     pipeline.start(filePath, settings);
   };
@@ -186,13 +189,15 @@ function AppInner() {
     setViewingHistory(null);
     historySavedRef.current = false;
     toastShownRef.current = false;
+    pipelineActiveRef.current = true;
     setActiveView("processing");
     pipeline.start(filePath, finalSettings);
   };
 
   // Auto-navigate when pipeline completes or errors, and save to history
   useEffect(() => {
-    if ((pipeline.status === "done" || pipeline.status === "error") && activeView === "processing") {
+    if ((pipeline.status === "done" || pipeline.status === "error") && pipelineActiveRef.current) {
+      pipelineActiveRef.current = false;
       setActiveView("result");
     }
     if (pipeline.status === "done" && pipeline.mdContent && pipeline.summary && !historySavedRef.current) {
@@ -208,7 +213,7 @@ function AppInner() {
       toastShownRef.current = true;
       showToast("Transkribering misslyckades", "error");
     }
-  }, [pipeline.status, pipeline.mdContent, pipeline.summary, activeView]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pipeline.status, pipeline.mdContent, pipeline.summary]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleViewHistory = (entry: HistoryEntry) => {
     setViewingHistory(entry);
