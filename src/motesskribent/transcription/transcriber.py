@@ -380,6 +380,8 @@ def transcribe(
             word_timestamps=word_timestamps,
             batch_size=batch_size,
             initial_prompt=initial_prompt,
+            vad_filter=vad_filter,
+            vad_parameters=vad_parameters,
         )
     else:
         model = _get_model(model_path, compute_type, cpu_threads)
@@ -395,6 +397,7 @@ def transcribe(
 
     # segments_gen är en generator — konsumera exakt en gång
     segments: list[TranscribedSegment] = []
+    _mem_log_interval = 100  # logga minnesanvändning var 100:e segment
     for seg in segments_gen:
         words = []
         if seg.words:
@@ -415,6 +418,14 @@ def transcribe(
 
         if progress_callback is not None:
             progress_callback(len(segments), seg.end, info.duration)
+
+        if len(segments) % _mem_log_interval == 0:
+            try:
+                import psutil
+                mem_mb = psutil.Process().memory_info().rss / (1024 * 1024)
+                logger.info("Segment %d: minnesanvändning %.0f MB", len(segments), mem_mb)
+            except ImportError:
+                pass
 
     elapsed = time.perf_counter() - start_time
 

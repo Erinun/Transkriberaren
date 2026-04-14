@@ -359,12 +359,12 @@ impl SidecarManager {
             }
         }
 
-        // Wait for "end" sentinel, process death, or timeout (2h for long transcriptions)
+        // Wait for "end" sentinel, process death, or timeout (8h for long transcriptions)
         let process_died = {
             let dc = disconnected.clone();
             let d = done.clone();
             tokio::time::timeout(
-                std::time::Duration::from_secs(7200),
+                std::time::Duration::from_secs(28800),
                 async {
                     tokio::select! {
                         _ = d.notified() => false,
@@ -385,7 +385,7 @@ impl SidecarManager {
 
         match process_died {
             Err(_) => {
-                return Err("Timeout: sidecar svarade inte inom 2 timmar".to_string());
+                return Err("Timeout: sidecar svarade inte inom 8 timmar".to_string());
             }
             Ok(true) => {
                 // Process died — check if we got error events before dying
