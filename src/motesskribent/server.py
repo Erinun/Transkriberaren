@@ -151,12 +151,34 @@ def _handle_transcribe(request_id: str, audio_path: str, config: dict) -> None:
 
 def run_server() -> None:
     """Main server loop: read NDJSON commands from stdin, dispatch, respond on stdout."""
+    # Säkerställ att stdout är line-buffered så _emit() aldrig fastnar i en
+    # intern buffer innan Rust hinner läsa nästa rad.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)  # Python 3.7+
+    except Exception:
+        pass
+
     # Suppress all logging to stdout (we use it for IPC)
     logging.basicConfig(
         level=logging.WARNING,
         stream=sys.stderr,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+
+    # Tysta tredjeparts-bibliotek som spammar stderr under långa körningar.
+    # Om Rust-sidans stderr-drain inte håller jämn takt kan pipe-bufferten
+    # fyllas och Python blockera på nästa skrivning. Detta är belt-and-
+    # suspenders ovanpå Rust-drain-tasken i sidecar_manager.rs.
+    for noisy in (
+        "pyannote",
+        "pyannote.audio",
+        "speechbrain",
+        "torch",
+        "torchaudio",
+        "faster_whisper",
+        "huggingface_hub",
+    ):
+        logging.getLogger(noisy).setLevel(logging.ERROR)
 
     _emit({"type": "ready"})
 

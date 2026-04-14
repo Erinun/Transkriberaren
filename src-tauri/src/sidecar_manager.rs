@@ -184,6 +184,32 @@ impl SidecarManager {
             .take()
             .ok_or("Kunde inte öppna stdout för sidecar")?;
 
+        // Drain stderr in a background task. This is CRITICAL: the OS pipe buffer
+        // (~64KB Linux/mac, 4-8KB Windows) fills up if no one reads stderr, which
+        // blocks Python's next sys.stderr.write() — Python stops processing, stops
+        // reading stdin, and the UI hangs indefinitely during long transcriptions.
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or("Kunde inte öppna stderr för sidecar")?;
+        tokio::spawn(async move {
+            let mut reader = BufReader::new(stderr);
+            loop {
+                let mut buf = Vec::new();
+                match reader.read_until(b'\n', &mut buf).await {
+                    Ok(0) => break, // EOF — processen avslutad
+                    Ok(_) => {
+                        let line = String::from_utf8_lossy(&buf);
+                        let trimmed = line.trim_end();
+                        if !trimmed.is_empty() {
+                            log::debug!("[sidecar stderr] {}", trimmed);
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+
         let disconnected = Arc::new(Notify::new());
         let ready_signal = Arc::new(Notify::new());
 

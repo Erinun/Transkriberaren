@@ -162,11 +162,49 @@ def run_pipeline(
 
     # 1. Förbehandling
     t0 = time.perf_counter()
-    skip_vad = config.speed_profile == "fast"
-    preprocessed = preprocess_audio(
-        audio_path, config.output_dir / "temp",
-        compute_vad_stats=not skip_vad,
+
+    # Bestäm ljudlängden billigt via soundfile.info (läser ingen samples-data).
+    # Används för att avgöra om VAD-statistik ska beräknas eller inte.
+    try:
+        import soundfile as sf
+        _info = sf.info(str(audio_path))
+        _audio_duration_s = _info.frames / _info.samplerate if _info.samplerate else 0.0
+    except Exception:
+        _audio_duration_s = 0.0
+
+    # VAD på CPU tar 5-15 min för 1h ljud och används bara för statistiken
+    # silence_removed_pct. För långa inspelningar skippar vi den för att undvika
+    # ett tyst UI-fönster där pipelinen verkar hänga.
+    LONG_RECORDING_THRESHOLD_S = 20 * 60
+    skip_vad = (
+        config.speed_profile == "fast"
+        or _audio_duration_s >= LONG_RECORDING_THRESHOLD_S
     )
+    if skip_vad and _audio_duration_s >= LONG_RECORDING_THRESHOLD_S:
+        logger.info(
+            "Hoppar över VAD-statistik för lång inspelning (%.0fs >= %ds)",
+            _audio_duration_s, LONG_RECORDING_THRESHOLD_S,
+        )
+
+    # Heartbeat-tråd som skickar obestämd progress var 5:e sekund under
+    # förbehandlingen. Samma mönster som diariserings-heartbeaten längre ned.
+    preproc_stop = threading.Event()
+
+    def _preproc_heartbeat():
+        while not preproc_stop.wait(5.0):
+            _progress("preprocessing", -1)
+
+    preproc_hb = threading.Thread(target=_preproc_heartbeat, daemon=True)
+    preproc_hb.start()
+    try:
+        preprocessed = preprocess_audio(
+            audio_path, config.output_dir / "temp",
+            compute_vad_stats=not skip_vad,
+        )
+    finally:
+        preproc_stop.set()
+        preproc_hb.join(timeout=1.0)
+
     breakdown["preprocessing"] = time.perf_counter() - t0
     _progress("preprocessing", 0.05)
 

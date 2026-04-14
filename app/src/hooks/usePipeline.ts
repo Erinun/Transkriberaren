@@ -45,7 +45,18 @@ interface PipelineState {
   modelName: string | null;
   segments: TranscriptionSegment[];
   wordCount: number;
+  // Stall detector: timestamp (ms) of the latest pipeline-event received while
+  // running, and a flag that surfaces in the UI when no event has arrived
+  // within STALL_THRESHOLD_MS. We do not hard-timeout the invoke — legitimate
+  // long transcriptions can run for hours — we only warn the user.
+  lastEventAt: number;
+  stalled: boolean;
 }
+
+// Show a "looks stuck" warning if no progress event arrives for this long.
+// Heartbeats fire every 5s in preprocessing/diarization, so 120s is safely
+// above any legitimate silence.
+const STALL_THRESHOLD_MS = 120_000;
 
 const INITIAL_STATE: PipelineState = {
   status: "idle",
@@ -61,6 +72,8 @@ const INITIAL_STATE: PipelineState = {
   modelName: null,
   segments: [],
   wordCount: 0,
+  lastEventAt: 0,
+  stalled: false,
 };
 
 export function usePipeline() {
@@ -73,6 +86,7 @@ export function usePipeline() {
     listen<any>("pipeline-event", (event) => {
       if (cancelled) return;
       const data = event.payload;
+      const now = Date.now();
 
       if (data.type === "progress") {
         setState((s) => {
@@ -82,6 +96,8 @@ export function usePipeline() {
               stage: data.stage,
               message: data.message,
               isIndeterminate: true,
+              lastEventAt: now,
+              stalled: false,
             };
           }
           return {
@@ -90,6 +106,8 @@ export function usePipeline() {
             percent: data.percent,
             message: data.message,
             isIndeterminate: false,
+            lastEventAt: now,
+            stalled: false,
           };
         });
       } else if (data.type === "result") {
@@ -104,6 +122,8 @@ export function usePipeline() {
           modelName: data.model_name ?? null,
           segments: data.segments ?? [],
           wordCount: data.word_count ?? 0,
+          lastEventAt: now,
+          stalled: false,
         }));
       } else if (data.type === "error") {
         setState((s) => {
@@ -113,6 +133,8 @@ export function usePipeline() {
             ...s,
             status: "error",
             error: data.message,
+            lastEventAt: now,
+            stalled: false,
           };
         });
       }
@@ -123,9 +145,37 @@ export function usePipeline() {
     return () => { cancelled = true; unlisten?.(); };
   }, []);
 
+  // Stall detector: while running, poll every 5s and flip `stalled` when the
+  // time since the last pipeline-event exceeds STALL_THRESHOLD_MS. This does
+  // NOT cancel the invoke — it only surfaces a warning in the UI so the user
+  // knows the app isn't silently frozen. Heartbeat events reset the flag.
+  useEffect(() => {
+    if (state.status !== "running") return;
+    const id = setInterval(() => {
+      setState((s) => {
+        if (s.status !== "running") return s;
+        const silent = Date.now() - s.lastEventAt;
+        if (silent > STALL_THRESHOLD_MS && !s.stalled) {
+          return {
+            ...s,
+            stalled: true,
+            message: "Processen verkar inte svara — kontrollera loggar.",
+          };
+        }
+        return s;
+      });
+    }, 5000);
+    return () => clearInterval(id);
+  }, [state.status]);
+
   const start = useCallback(
     async (audioPath: string, settings: PipelineSettings) => {
-      setState({ ...INITIAL_STATE, status: "running", message: "Startar..." });
+      setState({
+        ...INITIAL_STATE,
+        status: "running",
+        message: "Startar...",
+        lastEventAt: Date.now(),
+      });
 
       try {
         await invoke("run_transcription", {
