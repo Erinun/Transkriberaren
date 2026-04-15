@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import type { PipelineSettings } from "../hooks/usePipeline";
 import type { HistoryEntry } from "../hooks/useHistory";
+import CustomSelect from "./CustomSelect";
 
 interface Props {
   onStart: (filePath: string, settings: PipelineSettings) => void;
@@ -149,17 +150,14 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
             ))}
           </div>
         )}
-        <select
+        <CustomSelect
           value={model}
-          onChange={(e) => setModel(e.target.value)}
-          className="w-full px-3 py-2 rounded-lg glass-input text-sm"
-        >
-          {MODELS.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label} — {m.desc}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => setModel(v)}
+          options={MODELS.map((m) => ({
+            value: m.id,
+            label: `${m.label} — ${m.desc}`,
+          }))}
+        />
       </div>
 
       {/* Speed profile */}

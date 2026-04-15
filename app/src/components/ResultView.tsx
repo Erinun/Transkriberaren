@@ -7,6 +7,7 @@ import type { TranscriptionSegment } from "../hooks/usePipeline";
 import type { OllamaResult } from "../hooks/useHistory";
 import { useOllama, type OllamaStatus, type OllamaOptions } from "../hooks/useOllama";
 import { usePromptTemplates } from "../hooks/usePromptTemplates";
+import CustomSelect from "./CustomSelect";
 import {
   buildPrompt,
   estimateTokenCount,
@@ -384,20 +385,18 @@ export default function ResultView({
               </div>
               {/* Saved result dropdown (when multiple saved and no active generation) */}
               {!ollama.streamedText && !ollama.generating && savedOllamaResults && savedOllamaResults.length > 1 && (
-                <select
+                <CustomSelect
                   value={viewingSavedResult?.templateId ?? ""}
-                  onChange={(e) => {
-                    const r = savedOllamaResults.find((r) => r.templateId === e.target.value);
+                  onChange={(v) => {
+                    const r = savedOllamaResults.find((r) => r.templateId === v);
                     if (r) setViewingSavedResult(r);
                   }}
-                  className="px-2 py-1 rounded-lg glass-input text-xs bg-transparent text-[var(--color-text)] mb-2"
-                >
-                  {savedOllamaResults.map((r) => (
-                    <option key={r.templateId} value={r.templateId}>
-                      {r.templateName}
-                    </option>
-                  ))}
-                </select>
+                  options={savedOllamaResults.map((r) => ({
+                    value: r.templateId,
+                    label: r.templateName,
+                  }))}
+                  className="mb-2"
+                />
               )}
               {(ollama.streamedText || viewingSavedResult?.content) ? (
                 <div className="prose prose-invert max-w-none leading-relaxed">
@@ -640,22 +639,17 @@ export default function ResultView({
                   <label className="text-xs text-[var(--color-text-muted)] block mb-1">
                     Välj prompt
                   </label>
-                  <select
+                  <CustomSelect
                     value={selectedTemplate.id}
-                    onChange={(e) => {
-                      const t = allTemplates.find(
-                        (t) => t.id === e.target.value,
-                      );
+                    onChange={(v) => {
+                      const t = allTemplates.find((t) => t.id === v);
                       if (t) setSelectedTemplate(t);
                     }}
-                    className="w-full px-2 py-1.5 rounded-lg glass-input text-xs bg-transparent text-[var(--color-text)]"
-                  >
-                    {allTemplates.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
+                    options={allTemplates.map((t) => ({
+                      value: t.id,
+                      label: t.name,
+                    }))}
+                  />
                   <p className="text-[10px] text-[var(--color-text-muted)] mt-1">
                     {selectedTemplate.description}
                   </p>
@@ -709,17 +703,14 @@ export default function ResultView({
                   <label className="text-xs text-[var(--color-text-muted)] block mb-1">
                     LLM-modell
                   </label>
-                  <select
+                  <CustomSelect
                     value={ollama.selectedModel ?? ""}
-                    onChange={(e) => ollama.selectModel(e.target.value)}
-                    className="w-full px-2 py-1.5 rounded-lg glass-input text-xs bg-transparent text-[var(--color-text)]"
-                  >
-                    {ollama.models.map((m) => (
-                      <option key={m.name} value={m.name}>
-                        {m.name} ({formatFileSize(m.size)})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => ollama.selectModel(v)}
+                    options={ollama.models.map((m) => ({
+                      value: m.name,
+                      label: `${m.name} (${formatFileSize(m.size)})`,
+                    }))}
+                  />
                 </div>
 
                 {/* Context window warning */}

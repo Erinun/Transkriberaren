@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { OllamaStatus } from "../hooks/useOllama";
 import { usePromptTemplates } from "../hooks/usePromptTemplates";
 import { PROMPT_TEMPLATES } from "../data/promptTemplates";
+import CustomSelect from "./CustomSelect";
 
 interface Settings {
   defaultModel: string;
@@ -172,15 +173,15 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
             </div>
           </div>
         )}
-        <select
+        <CustomSelect
           value={settings.defaultModel}
-          onChange={(e) => update("defaultModel", e.target.value)}
-          className="w-full px-3 py-2 rounded-lg glass-input text-sm"
-        >
-          <option value="KBLab/kb-whisper-tiny">Tiny (~160 MB) — snabbast</option>
-          <option value="KBLab/kb-whisper-base">Base (~240 MB) — rekommenderas</option>
-          <option value="KBLab/kb-whisper-small">Small (~460 MB)</option>
-        </select>
+          onChange={(v) => update("defaultModel", v)}
+          options={[
+            { value: "KBLab/kb-whisper-tiny", label: "Tiny (~160 MB) — snabbast" },
+            { value: "KBLab/kb-whisper-base", label: "Base (~240 MB) — rekommenderas" },
+            { value: "KBLab/kb-whisper-small", label: "Small (~460 MB)" },
+          ]}
+        />
       </div>
 
       {/* Default speakers */}
@@ -343,17 +344,14 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
           <div className="space-y-2">
             <label className="block text-sm text-[var(--color-text-muted)]">Standardmodell for Ollama</label>
             {ollamaStatus.models.length > 0 ? (
-              <select
+              <CustomSelect
                 value={ollamaStatus.selectedModel ?? ""}
-                onChange={(e) => ollamaStatus.selectModel(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg glass-input text-sm"
-              >
-                {ollamaStatus.models.map((m) => (
-                  <option key={m.name} value={m.name}>
-                    {m.name} ({formatFileSize(m.size)})
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => ollamaStatus.selectModel(v)}
+                options={ollamaStatus.models.map((m) => ({
+                  value: m.name,
+                  label: `${m.name} (${formatFileSize(m.size)})`,
+                }))}
+              />
             ) : (
               <p className="text-xs text-[var(--color-text-muted)]">
                 Inga modeller installerade. Ladda ner med:{" "}
@@ -611,19 +609,19 @@ function OllamaParametersSection() {
       {/* Context window */}
       <div>
         <label className="text-xs text-[var(--color-text-muted)] block mb-1">Kontextfonster (num_ctx)</label>
-        <select
-          value={opts.num_ctx}
-          onChange={(e) => update("num_ctx", Number(e.target.value))}
-          className="w-full px-3 py-2 rounded-lg glass-input text-sm"
-        >
-          <option value={2048}>2 048</option>
-          <option value={4096}>4 096</option>
-          <option value={8192}>8 192 (standard)</option>
-          <option value={16384}>16 384</option>
-          <option value={32768}>32 768</option>
-          <option value={65536}>65 536</option>
-          <option value={131072}>131 072</option>
-        </select>
+        <CustomSelect
+          value={String(opts.num_ctx)}
+          onChange={(v) => update("num_ctx", Number(v))}
+          options={[
+            { value: "2048", label: "2 048" },
+            { value: "4096", label: "4 096" },
+            { value: "8192", label: "8 192 (standard)" },
+            { value: "16384", label: "16 384" },
+            { value: "32768", label: "32 768" },
+            { value: "65536", label: "65 536" },
+            { value: "131072", label: "131 072" },
+          ]}
+        />
         <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5">
           Storre varden kraver mer RAM. 8192 racker for moeten under 30 min. For langre moeten (1+ timme), anvand 32768 eller hogre.
           Kontextfonstret hojs automatiskt om transkriberingen ar storre.
@@ -633,18 +631,18 @@ function OllamaParametersSection() {
       {/* Max tokens */}
       <div>
         <label className="text-xs text-[var(--color-text-muted)] block mb-1">Max tokens (num_predict)</label>
-        <select
-          value={opts.num_predict}
-          onChange={(e) => update("num_predict", Number(e.target.value))}
-          className="w-full px-3 py-2 rounded-lg glass-input text-sm"
-        >
-          <option value={512}>512</option>
-          <option value={1024}>1 024</option>
-          <option value={2048}>2 048</option>
-          <option value={4096}>4 096 (standard)</option>
-          <option value={8192}>8 192</option>
-          <option value={16384}>16 384</option>
-        </select>
+        <CustomSelect
+          value={String(opts.num_predict)}
+          onChange={(v) => update("num_predict", Number(v))}
+          options={[
+            { value: "512", label: "512" },
+            { value: "1024", label: "1 024" },
+            { value: "2048", label: "2 048" },
+            { value: "4096", label: "4 096 (standard)" },
+            { value: "8192", label: "8 192" },
+            { value: "16384", label: "16 384" },
+          ]}
+        />
       </div>
     </div>
   );
