@@ -28,6 +28,19 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install cargo-binstall
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          Invoke-WebRequest -Uri "https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-pc-windows-msvc.zip" -OutFile binstall.zip
+          Expand-Archive binstall.zip -DestinationPath "$env:USERPROFILE\.cargo\bin" -Force
+
+      - name: Install cargo-tauri
+        run: cargo binstall tauri-cli --no-confirm
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
       - name: Cache models
         id: cache-models
         uses: actions/cache@v4
@@ -64,14 +77,62 @@ jobs:
           robocopy dist\motesskribent-sidecar src-tauri\sidecar /E /DCOPY:DAT /COPY:DAT /NFL /NDL /NJH /NJS
           if ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE } else { exit 0 }
 
-      - name: Build and release
-        uses: tauri-apps/tauri-action@v0
+      - name: Download WebView2 bootstrapper
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile "src-tauri\MicrosoftEdgeWebview2Setup.exe"
+
+      - name: Build Tauri app (without bundler)
+        working-directory: src-tauri
+        run: cargo tauri build --no-bundle
+
+      - name: Extract version
+        id: version
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path pyproject.toml -Pattern '^version\s*=\s*"(.+)"').Matches[0].Groups[1].Value
+          echo "VERSION=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Build Inno Setup installer
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=${{ steps.version.outputs.VERSION }} scripts\installer.iss
+
+      - name: Sign installer for updater
+        shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $exe = "output/MotesSkribent_${{ steps.version.outputs.VERSION }}_x64-setup.exe"
+          cargo tauri signer sign $exe
+
+      - name: Generate latest.json
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $sigFile = "output/MotesSkribent_${version}_x64-setup.exe.sig"
+          $sig = (Get-Content $sigFile -Raw).Trim()
+          $date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          $json = @{
+            version = $version
+            notes = "MötesSkribent v${version}"
+            pub_date = $date
+            platforms = @{
+              "windows-x86_64" = @{
+                signature = $sig
+                url = "https://github.com/Erinun/Transkriberaren/releases/download/v${version}/MotesSkribent_${version}_x64-setup.exe"
+              }
+            }
+          } | ConvertTo-Json -Depth 4
+          $path = "output/latest.json"
+          [System.IO.File]::WriteAllText($path, $json)
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "MötesSkribent ${{ github.ref_name }}"
-          releaseBody: "Automatisk release. Befintliga installationer uppdateras automatiskt."
-          args: --bundles nsis
+          name: "MötesSkribent v${{ steps.version.outputs.VERSION }}"
+          body: "Automatisk release. Befintliga installationer uppdateras automatiskt."
+          files: |
+            output/MotesSkribent_${{ steps.version.outputs.VERSION }}_x64-setup.exe
+            output/latest.json
