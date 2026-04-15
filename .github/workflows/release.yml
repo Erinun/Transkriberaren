@@ -28,12 +28,6 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-tauri
-        run: cargo install tauri-cli --locked
-
-      - name: Install Inno Setup
-        run: choco install innosetup -y --no-progress
-
       - name: Cache models
         id: cache-models
         uses: actions/cache@v4
@@ -70,28 +64,14 @@ jobs:
           robocopy dist\motesskribent-sidecar src-tauri\sidecar /E /DCOPY:DAT /COPY:DAT /NFL /NDL /NJH /NJS
           if ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE } else { exit 0 }
 
-      - name: Download WebView2 bootstrapper
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile "src-tauri\MicrosoftEdgeWebview2Setup.exe"
-
-      - name: Build Tauri app (without bundler)
-        working-directory: src-tauri
-        run: cargo tauri build --no-bundle
-
-      - name: Extract version
-        id: version
-        shell: pwsh
-        run: |
-          $v = (Select-String -Path pyproject.toml -Pattern '^version\s*=\s*"(.+)"').Matches[0].Groups[1].Value
-          echo "VERSION=$v" >> $env:GITHUB_OUTPUT
-
-      - name: Build Inno Setup installer
-        shell: pwsh
-        run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=${{ steps.version.outputs.VERSION }} scripts\installer.iss
-
-      - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          files: output/MötesSkribent_*_x64-setup.exe
+          tagName: ${{ github.ref_name }}
+          releaseName: "MötesSkribent ${{ github.ref_name }}"
+          releaseBody: "Automatisk release. Befintliga installationer uppdateras automatiskt."
+          args: --bundles nsis
