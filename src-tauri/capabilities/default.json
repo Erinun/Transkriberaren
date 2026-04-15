@@ -11,6 +11,7 @@
     "shell:allow-open",
     "notification:default",
     "notification:allow-notify",
-    "notification:allow-request-permission"
+    "notification:allow-request-permission",
+    "updater:default"
   ]
 }
