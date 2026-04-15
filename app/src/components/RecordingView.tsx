@@ -1,13 +1,14 @@
 import { useState, useRef, useEffect } from "react";
-import { useRecorder } from "../hooks/useRecorder";
+import type { Recorder } from "../hooks/useRecorder";
 import { useAudioDevices } from "../hooks/useAudioDevices";
-import { useAudioLevel } from "../hooks/useAudioLevel";
 import AudioLevelBars from "./AudioLevelBars";
 import type { PipelineSettings } from "../hooks/usePipeline";
 
 interface Props {
   onRecordingComplete: (filePath: string, settings: PipelineSettings, deviceName: string) => void;
   settings: PipelineSettings;
+  recorder: Recorder;
+  audioLevels: number[];
 }
 
 function formatTime(seconds: number): string {
@@ -105,10 +106,8 @@ function DeviceDropdown({
   );
 }
 
-export default function RecordingView({ onRecordingComplete, settings }: Props) {
-  const recorder = useRecorder();
+export default function RecordingView({ onRecordingComplete, settings, recorder, audioLevels: levels }: Props) {
   const audioDevices = useAudioDevices();
-  const levels = useAudioLevel(recorder.status === "recording" || recorder.status === "paused");
   const [showInfo, setShowInfo] = useState(false);
 
   const isActive = recorder.status === "recording" || recorder.status === "paused";

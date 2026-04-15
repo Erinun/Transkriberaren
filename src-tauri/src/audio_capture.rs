@@ -837,6 +837,14 @@ pub fn stop_recording(state: &RecorderState) -> Result<RecordingResult, String> 
     })
 }
 
+pub fn get_recording_status(state: &RecorderState) -> Option<(bool, String)> {
+    let guard = state.inner.lock().ok()?;
+    guard.as_ref().map(|handle| {
+        let is_paused = handle.paused.load(Ordering::Relaxed);
+        (is_paused, handle.device_name.clone())
+    })
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 fn spawn_tick_and_level_emitters(

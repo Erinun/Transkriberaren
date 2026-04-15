@@ -15,6 +15,8 @@ import UpdateChecker from "./components/UpdateChecker";
 import { usePipeline, type PipelineSettings } from "./hooks/usePipeline";
 import { useHistory, type HistoryEntry, type OllamaResult } from "./hooks/useHistory";
 import { useOllamaStatus } from "./hooks/useOllama";
+import { useRecorder } from "./hooks/useRecorder";
+import { useAudioLevel } from "./hooks/useAudioLevel";
 
 type View = "dashboard" | "transcribe" | "history" | "processing" | "result" | "settings" | "recording";
 type SidecarStatus = "starting" | "warming_up" | "ready" | "error";
@@ -95,6 +97,9 @@ function AppInner() {
   const pipeline = usePipeline();
   const history = useHistory();
   const ollamaStatus = useOllamaStatus();
+  const recorder = useRecorder();
+  const isRecordingActive = recorder.status === "recording" || recorder.status === "paused";
+  const audioLevels = useAudioLevel(isRecordingActive);
 
   // Check Ollama health on mount
   useEffect(() => {
@@ -318,7 +323,15 @@ function AppInner() {
                         : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/5"
                   }`}
                 >
-                  {item.label}
+                  <span className="relative">
+                    {item.label}
+                    {item.id === "recording" && isRecordingActive && activeView !== "recording" && (
+                      <span
+                        className="absolute -top-1 -right-2.5 w-2 h-2 rounded-full bg-[var(--color-error)] animate-pulse-rec"
+                        title="Inspelning pågår"
+                      />
+                    )}
+                  </span>
                 </button>
               );
             })}
@@ -386,6 +399,8 @@ function AppInner() {
             <RecordingView
               onRecordingComplete={handleRecordingComplete}
               settings={recordingSettings}
+              recorder={recorder}
+              audioLevels={audioLevels}
             />
           )}
         </div>

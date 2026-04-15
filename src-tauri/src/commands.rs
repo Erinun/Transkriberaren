@@ -98,6 +98,31 @@ pub async fn resume_recording(
     audio_capture::resume_recording(&state)
 }
 
+#[derive(serde::Serialize)]
+pub struct RecordingStatusInfo {
+    pub active: bool,
+    pub paused: bool,
+    pub device_name: Option<String>,
+}
+
+#[tauri::command]
+pub async fn get_recording_status(
+    state: State<'_, RecorderState>,
+) -> Result<RecordingStatusInfo, String> {
+    match audio_capture::get_recording_status(&state) {
+        Some((is_paused, device_name)) => Ok(RecordingStatusInfo {
+            active: true,
+            paused: is_paused,
+            device_name: Some(device_name),
+        }),
+        None => Ok(RecordingStatusInfo {
+            active: false,
+            paused: false,
+            device_name: None,
+        }),
+    }
+}
+
 #[tauri::command]
 pub async fn read_file_content(path: String) -> Result<String, String> {
     tokio::fs::read_to_string(&path)

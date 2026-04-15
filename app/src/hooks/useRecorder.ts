@@ -128,5 +128,22 @@ export function useRecorder() {
     }
   }, []);
 
+  // Sync with Rust-side recording state on mount (handles app reload)
+  useEffect(() => {
+    invoke<{ active: boolean; paused: boolean; device_name: string | null }>(
+      "get_recording_status"
+    ).then((info) => {
+      if (info.active) {
+        setState((s) => ({
+          ...s,
+          status: info.paused ? "paused" : "recording",
+          deviceName: info.device_name,
+        }));
+      }
+    }).catch(() => {});
+  }, []);
+
   return { ...state, start, stop, pause, resume };
 }
+
+export type Recorder = ReturnType<typeof useRecorder>;
