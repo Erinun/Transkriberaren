@@ -130,6 +130,8 @@ jobs:
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           name: "MötesSkribent v${{ steps.version.outputs.VERSION }}"
           body: "Automatisk release. Befintliga installationer uppdateras automatiskt."
