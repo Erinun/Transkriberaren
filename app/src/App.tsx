@@ -269,12 +269,12 @@ function AppInner() {
         onBack: () => {
           pipeline.reset();
           setViewingHistory(null);
-          setActiveView("transcribe");
+          setActiveView("dashboard");
         },
         onRetranscribe: () => {
           pipeline.reset();
           setViewingHistory(null);
-          setActiveView("transcribe");
+          setActiveView("dashboard");
         },
       };
 
