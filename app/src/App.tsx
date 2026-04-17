@@ -121,6 +121,9 @@ function AppInner() {
   // Track the current history entry ID (for saving ollama results)
   const [currentEntryId, setCurrentEntryId] = useState<string | null>(null);
 
+  // Track where the transcription was started from (for back navigation)
+  const [sourceView, setSourceView] = useState<View>("dashboard");
+
   // Track whether we already saved the current run to history
   const historySavedRef = useRef(false);
   // Track whether we already showed the toast for the current run
@@ -181,6 +184,7 @@ function AppInner() {
     const name = filePath.split(/[\\/]/).pop() ?? filePath;
     setCurrentAudioName(name);
     setViewingHistory(null);
+    setSourceView("transcribe");
     historySavedRef.current = false;
     toastShownRef.current = false;
     pipelineActiveRef.current = true;
@@ -195,6 +199,7 @@ function AppInner() {
     const name = filePath.split(/[\\/]/).pop() ?? filePath;
     setCurrentAudioName(name);
     setViewingHistory(null);
+    setSourceView("recording");
     historySavedRef.current = false;
     toastShownRef.current = false;
     pipelineActiveRef.current = true;
@@ -269,12 +274,12 @@ function AppInner() {
         onBack: () => {
           pipeline.reset();
           setViewingHistory(null);
-          setActiveView("dashboard");
+          setActiveView(sourceView);
         },
         onRetranscribe: () => {
           pipeline.reset();
           setViewingHistory(null);
-          setActiveView("dashboard");
+          setActiveView(sourceView);
         },
       };
 
@@ -379,6 +384,9 @@ function AppInner() {
               percent={pipeline.percent}
               message={pipeline.message}
               isIndeterminate={pipeline.isIndeterminate}
+              lastEventTime={pipeline.lastEventTime}
+              startTime={pipeline.startTime}
+              eventLog={pipeline.eventLog}
             />
           )}
           {activeView === "result" && (
