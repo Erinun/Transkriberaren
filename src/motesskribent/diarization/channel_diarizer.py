@@ -1,23 +1,22 @@
 """Kanalbaserad talarseparering för stereo-inspelningar (mic + systemljud).
 
-Använder bleed-subtrahering med fördröjningskompensation för att separera
-användarens röst från systemljudsläckage i mikrofon-kanalen.
-
-Problemet: Systemljudet fångas digitalt (ren kopia) medan mikrofonen fångar
-samma ljud via högtalarna med en tidsfördröjning (ljud reser ~3ms/meter).
-Algoritmen uppskattar fördröjningen via korskorrelation, kompenserar för den,
-och subtraherar sedan läckaget för att isolera användarens röst.
+Stödjer två arbetsflöden:
+1. Per-kanal-transkription: transkribera mic och system separat, slå ihop
+   med deduplicering av mic-bleed. (merge_channel_transcriptions)
+2. Bleed-subtrahering: tilldela talare till redan-transkriberade segment
+   baserat på energianalys. (assign_speakers_by_channel — legacy)
 """
 
 from __future__ import annotations
 
+import difflib
 import logging
 from pathlib import Path
 
 import numpy as np
 import soundfile as sf
 
-from motesskribent.transcription.transcriber import TranscribedSegment
+from motesskribent.transcription.transcriber import TranscribedSegment, TranscriptionResult
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +26,91 @@ _NOISE_FACTOR = 3.0  # Rösttröskel = brusgolv × denna faktor
 _MIN_VOICE_THRESHOLD = 0.005  # Absolut minsta rösttröskel
 _FRAME_MS = 50  # Ram-storlek (ms) för brusgolv-beräkning
 _MAX_DELAY_MS = 50.0  # Max fördröjning att söka (högtalare → mikrofon)
+
+
+def merge_channel_transcriptions(
+    mic_result: TranscriptionResult,
+    system_result: TranscriptionResult,
+) -> TranscriptionResult:
+    """Slå ihop per-kanal-transkriptioner till ett resultat.
+
+    Taggar mic-segment som Talare 1, system-segment som Talare 2,
+    sorterar kronologiskt och deduplicerar mic-bleed.
+    """
+    for seg in mic_result.segments:
+        seg.speaker_id = "SPEAKER_00"
+        seg.speaker_label = "Talare 1"
+
+    for seg in system_result.segments:
+        seg.speaker_id = "SPEAKER_01"
+        seg.speaker_label = "Talare 2"
+
+    merged = mic_result.segments + system_result.segments
+    merged.sort(key=lambda s: s.start)
+
+    if mic_result.segments and system_result.segments:
+        merged = _deduplicate_bleed(merged)
+
+    logger.info(
+        "Per-kanal-transkription: %d mic-segment, %d system-segment, "
+        "%d efter dedup",
+        len(mic_result.segments),
+        len(system_result.segments),
+        len(merged),
+    )
+
+    return TranscriptionResult(
+        segments=merged,
+        language=mic_result.language,
+        language_probability=max(
+            mic_result.language_probability,
+            system_result.language_probability,
+        ),
+        processing_time=mic_result.processing_time + system_result.processing_time,
+        model_name=mic_result.model_name,
+        audio_duration=max(mic_result.audio_duration, system_result.audio_duration),
+    )
+
+
+def _deduplicate_bleed(
+    segments: list[TranscribedSegment],
+    overlap_threshold: float = 0.5,
+    text_similarity_threshold: float = 0.6,
+) -> list[TranscribedSegment]:
+    """Ta bort mic-bleed-dubletter, behåll system-kanalens version."""
+    to_remove: set[int] = set()
+
+    for i, seg_a in enumerate(segments):
+        if i in to_remove:
+            continue
+        for j in range(i + 1, len(segments)):
+            if j in to_remove:
+                continue
+            seg_b = segments[j]
+            # Bara kors-kanal-par
+            if seg_a.speaker_id == seg_b.speaker_id:
+                continue
+            # Kolla tidsöverlapp
+            overlap = min(seg_a.end, seg_b.end) - max(seg_a.start, seg_b.start)
+            min_dur = min(seg_a.end - seg_a.start, seg_b.end - seg_b.start)
+            if min_dur <= 0 or overlap / min_dur < overlap_threshold:
+                continue
+            # Kolla textsimilaritet
+            ratio = difflib.SequenceMatcher(
+                None, seg_a.text.lower().strip(), seg_b.text.lower().strip()
+            ).ratio()
+            if ratio >= text_similarity_threshold:
+                # Ta bort mic-versionen, behåll system (renare digital signal)
+                mic_idx = i if seg_a.speaker_id == "SPEAKER_00" else j
+                to_remove.add(mic_idx)
+                logger.debug(
+                    "Dedup bleed: tog bort mic-segment %.1f-%.1fs (likhet=%.2f)",
+                    segments[mic_idx].start,
+                    segments[mic_idx].end,
+                    ratio,
+                )
+
+    return [s for idx, s in enumerate(segments) if idx not in to_remove]
 
 
 def assign_speakers_by_channel(

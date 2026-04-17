@@ -2522,7 +2522,7 @@ dependencies = [
 
 [[package]]
 name = "motesskribent-app"
-version = "0.5.1"
+version = "0.5.5"
 dependencies = [
  "base64 0.22.1",
  "chrono",

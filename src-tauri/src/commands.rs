@@ -124,6 +124,11 @@ pub async fn get_recording_status(
 }
 
 #[tauri::command]
+pub fn detect_active_audio() -> Result<Vec<crate::wasapi_loopback::ActiveOutputDevice>, String> {
+    crate::wasapi_loopback::detect_active_output_devices()
+}
+
+#[tauri::command]
 pub async fn read_file_content(path: String) -> Result<String, String> {
     tokio::fs::read_to_string(&path)
         .await

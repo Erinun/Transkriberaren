@@ -52,13 +52,15 @@ def _run_json_ipc(audio_file: Path, config):
         "formatting": "Formaterar output",
     }
 
-    def on_progress(step: str, fraction: float):
+    def on_progress(step: str, fraction: float, detail: str = ""):
         percent = -1 if fraction < 0 else round(fraction * 100)
+        base_msg = steps_sv.get(step, step)
+        message = f"{base_msg} ({detail})" if detail else base_msg
         _emit_json({
             "type": "progress",
             "stage": step,
             "percent": percent,
-            "message": steps_sv.get(step, step),
+            "message": message,
         })
 
     try:
@@ -149,7 +151,7 @@ def transkribera(audio_file: Path, modell: str, talare: int | None,
     ) as progress:
         task = progress.add_task("Startar...", total=100)
 
-        def on_progress(step: str, fraction: float):
+        def on_progress(step: str, fraction: float, detail: str = ""):
             desc = steps.get(step, step)
             if fraction >= 0:
                 progress.update(task, completed=fraction * 100, description=desc)

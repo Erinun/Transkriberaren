@@ -31,6 +31,11 @@ export interface TranscriptionSegment {
 
 type PipelineStatus = "idle" | "running" | "done" | "error";
 
+export interface EventLogEntry {
+  time: number;
+  message: string;
+}
+
 interface PipelineState {
   status: PipelineStatus;
   stage: string;
@@ -45,6 +50,9 @@ interface PipelineState {
   modelName: string | null;
   segments: TranscriptionSegment[];
   wordCount: number;
+  lastEventTime: number;
+  startTime: number;
+  eventLog: EventLogEntry[];
 }
 
 const INITIAL_STATE: PipelineState = {
@@ -61,6 +69,9 @@ const INITIAL_STATE: PipelineState = {
   modelName: null,
   segments: [],
   wordCount: 0,
+  lastEventTime: 0,
+  startTime: 0,
+  eventLog: [],
 };
 
 export function usePipeline() {
@@ -76,12 +87,23 @@ export function usePipeline() {
 
       if (data.type === "progress") {
         setState((s) => {
+          const now = Date.now();
+          const logEntry: EventLogEntry = { time: now, message: data.message };
+          const newLog = [...s.eventLog.slice(-4), logEntry];
+
+          // Heartbeat: update liveness only, don't change displayed stage/percent
+          if (data.stage === "heartbeat") {
+            return { ...s, lastEventTime: now, eventLog: newLog };
+          }
+
           if (data.percent === -1) {
             return {
               ...s,
               stage: data.stage,
               message: data.message,
               isIndeterminate: true,
+              lastEventTime: now,
+              eventLog: newLog,
             };
           }
           return {
@@ -90,6 +112,8 @@ export function usePipeline() {
             percent: data.percent,
             message: data.message,
             isIndeterminate: false,
+            lastEventTime: now,
+            eventLog: newLog,
           };
         });
       } else if (data.type === "result") {
@@ -125,7 +149,7 @@ export function usePipeline() {
 
   const start = useCallback(
     async (audioPath: string, settings: PipelineSettings) => {
-      setState({ ...INITIAL_STATE, status: "running", message: "Startar..." });
+      setState({ ...INITIAL_STATE, status: "running", message: "Startar...", startTime: Date.now(), lastEventTime: Date.now() });
 
       try {
         await invoke("run_transcription", {

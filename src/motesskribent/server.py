@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor, wait
 from pathlib import Path
 
@@ -108,17 +109,38 @@ def _handle_transcribe(request_id: str, audio_path: str, config: dict) -> None:
         audio_source=config.get("audio_source"),
     )
 
-    def on_progress(step: str, fraction: float):
+    def on_progress(step: str, fraction: float, detail: str = ""):
         percent = -1 if fraction < 0 else round(fraction * 100)
+        base_msg = _STEPS_SV.get(step, step)
+        message = f"{base_msg} ({detail})" if detail else base_msg
         _emit({
             "request_id": request_id,
             "type": "progress",
             "stage": step,
             "percent": percent,
-            "message": _STEPS_SV.get(step, step),
+            "message": message,
         })
 
-    result = run_pipeline(Path(audio_path), pipeline_config, progress_callback=on_progress)
+    # Heartbeat: emit liveness signal every 5s during entire pipeline run
+    heartbeat_stop = threading.Event()
+
+    def _heartbeat():
+        while not heartbeat_stop.wait(5.0):
+            _emit({
+                "request_id": request_id,
+                "type": "progress",
+                "stage": "heartbeat",
+                "percent": -1,
+                "message": "Pipeline aktiv",
+            })
+
+    hb_thread = threading.Thread(target=_heartbeat, daemon=True)
+    hb_thread.start()
+    try:
+        result = run_pipeline(Path(audio_path), pipeline_config, progress_callback=on_progress)
+    finally:
+        heartbeat_stop.set()
+        hb_thread.join(timeout=1.0)
 
     _emit({
         "request_id": request_id,

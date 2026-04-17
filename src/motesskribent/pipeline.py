@@ -14,7 +14,7 @@ from motesskribent.transcription.transcriber import TranscribedSegment
 
 logger = logging.getLogger(__name__)
 
-ProgressCallback = Callable[[str, float], None]
+ProgressCallback = Callable[[str, float, str], None]
 
 
 SPEED_PROFILES = {
@@ -153,9 +153,9 @@ def run_pipeline(
     config.output_dir = Path(config.output_dir)
     config.output_dir.mkdir(parents=True, exist_ok=True)
 
-    def _progress(step: str, fraction: float):
+    def _progress(step: str, fraction: float, detail: str = ""):
         if progress_callback:
-            progress_callback(step, fraction)
+            progress_callback(step, fraction, detail)
 
     pipeline_start = time.perf_counter()
     breakdown: dict[str, float] = {}
@@ -174,11 +174,14 @@ def run_pipeline(
     diarization_segments = []
     num_speakers = 0
     diarization_failed = False
-    skip_diarization = config.num_speakers is not None and config.num_speakers <= 1
     use_channel_diarization = (
-        not skip_diarization
-        and preprocessed.is_stereo_recording
+        preprocessed.is_stereo_recording
         and preprocessed.channel_audio_paths is not None
+    )
+    skip_diarization = (
+        not use_channel_diarization
+        and config.num_speakers is not None
+        and config.num_speakers <= 1
     )
     warnings: list[str] = []
     trans_result = None
@@ -241,14 +244,15 @@ def run_pipeline(
         pct = int(mapped * 100)
         if pct > _last_pct[0]:
             _last_pct[0] = pct
-            _progress("transcription", mapped)
+            estimated_total = max(int(audio_duration / 4), 1)
+            _progress("transcription", mapped, f"segment {segment_index}/~{estimated_total}")
 
     def _run_transcription():
         nonlocal trans_result
         t = time.perf_counter()
         from motesskribent.transcription.transcriber import transcribe
-        trans_result = transcribe(
-            preprocessed.audio_path,
+
+        common_kwargs = dict(
             model_path=config.model_path,
             language=config.language,
             beam_size=config.beam_size,
@@ -258,8 +262,57 @@ def run_pipeline(
             initial_prompt=config.initial_prompt,
             vad_filter=config.vad_enabled,
             batch_size=config.batch_size,
-            progress_callback=_on_transcription_progress,
         )
+
+        if use_channel_diarization:
+            # Transkribera varje kanal separat för att inte tappa systemljud
+            _channel_phase = [0]  # 0=mic, 1=system
+
+            def _channel_progress(segment_index, segment_end, audio_duration):
+                if audio_duration <= 0:
+                    return
+                frac = min(segment_end / audio_duration, 1.0)
+                # mic = 0-0.45, system = 0.45-0.90 av transkriptionsfasen
+                if _channel_phase[0] == 0:
+                    mapped = frac * 0.45
+                else:
+                    mapped = 0.45 + frac * 0.45
+                pct = int(mapped * 100)
+                if pct > _last_pct[0]:
+                    _last_pct[0] = pct
+                    _progress("transcription", mapped)
+
+            logger.info("Per-kanal-transkription: transkriberar mic-kanal")
+            mic_result = transcribe(
+                preprocessed.channel_audio_paths[0],
+                progress_callback=_channel_progress,
+                **common_kwargs,
+            )
+            _channel_phase[0] = 1
+            logger.info("Per-kanal-transkription: transkriberar system-kanal")
+            system_result = transcribe(
+                preprocessed.channel_audio_paths[1],
+                progress_callback=_channel_progress,
+                **common_kwargs,
+            )
+
+            # Fallback: om båda kanalerna ger 0 segment, prova mono-filen
+            if not mic_result.segments and not system_result.segments:
+                logger.warning("Båda kanalerna tomma, faller tillbaka till mono")
+                trans_result = transcribe(
+                    preprocessed.audio_path,
+                    progress_callback=_on_transcription_progress,
+                    **common_kwargs,
+                )
+            else:
+                from motesskribent.diarization.channel_diarizer import merge_channel_transcriptions
+                trans_result = merge_channel_transcriptions(mic_result, system_result)
+        else:
+            trans_result = transcribe(
+                preprocessed.audio_path,
+                progress_callback=_on_transcription_progress,
+                **common_kwargs,
+            )
         return time.perf_counter() - t
 
     if skip_diarization or use_channel_diarization:
@@ -284,17 +337,13 @@ def run_pipeline(
 
     # 4. Matcha talare
     if use_channel_diarization:
-        from motesskribent.diarization.channel_diarizer import assign_speakers_by_channel
-        segments, num_speakers = assign_speakers_by_channel(
-            trans_result.segments,
-            preprocessed.channel_audio_paths[0],  # mic
-            preprocessed.channel_audio_paths[1],  # system
-            sample_rate=preprocessed.sample_rate,
-        )
+        # Talare redan tilldelade av merge_channel_transcriptions
+        segments = trans_result.segments
+        num_speakers = len({s.speaker_id for s in segments if s.speaker_id})
     else:
         segments = _assign_speakers(trans_result.segments, diarization_segments)
 
-    if skip_diarization or diarization_failed:
+    if not use_channel_diarization and (skip_diarization or diarization_failed):
         for seg in segments:
             seg.speaker_id = "SPEAKER_00"
             seg.speaker_label = "Talare 1"

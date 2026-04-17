@@ -28,7 +28,7 @@ function DeviceDropdown({
   selectedId,
   onSelect,
 }: {
-  devices: { id: string; name: string; category: string }[];
+  devices: { id: string; name: string; category: string; is_active?: boolean }[];
   selectedId: string;
   onSelect: (id: string) => void;
 }) {
@@ -89,12 +89,15 @@ function DeviceDropdown({
                     onSelect(dev.id);
                     setOpen(false);
                   }}
-                  className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
+                  className={`w-full text-left px-3 py-1.5 text-sm transition-colors flex items-center gap-2 ${
                     dev.id === selectedId
                       ? "bg-[var(--color-primary)] text-white"
                       : "text-[var(--color-text)] hover:bg-white/5"
                   }`}
                 >
+                  {dev.is_active && (
+                    <span className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" title="Ljud detekterat" />
+                  )}
                   {dev.name}
                 </button>
               ))}
@@ -112,6 +115,15 @@ export default function RecordingView({ onRecordingComplete, settings, recorder,
 
   const isActive = recorder.status === "recording" || recorder.status === "paused";
   const isPaused = recorder.status === "paused";
+
+  // Stop polling during recording, resume when stopped
+  useEffect(() => {
+    if (isActive) {
+      audioDevices.stopPolling();
+    } else {
+      audioDevices.startPolling();
+    }
+  }, [isActive]);
 
   const handleStart = async () => {
     await recorder.start(audioDevices.selectedDeviceId);
