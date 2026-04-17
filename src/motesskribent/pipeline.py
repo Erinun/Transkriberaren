@@ -272,11 +272,11 @@ def run_pipeline(
                 if audio_duration <= 0:
                     return
                 frac = min(segment_end / audio_duration, 1.0)
-                # mic = 0-0.45, system = 0.45-0.90 av transkriptionsfasen
+                # Diarization når 0.30, sedan mic = 0.30-0.60, system = 0.60-0.90
                 if _channel_phase[0] == 0:
-                    mapped = frac * 0.45
+                    mapped = 0.30 + frac * 0.30
                 else:
-                    mapped = 0.45 + frac * 0.45
+                    mapped = 0.60 + frac * 0.30
                 pct = int(mapped * 100)
                 if pct > _last_pct[0]:
                     _last_pct[0] = pct
