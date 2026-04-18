@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "motesskribent"
-version = "0.5.6"
+version = "0.5.7"
 description = "Lokal mötesanteckning med AI — transkribering och talarseparering"
 requires-python = ">=3.10"
 dependencies = [
