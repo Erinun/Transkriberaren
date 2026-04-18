@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import type { Recorder } from "../hooks/useRecorder";
-import { useAudioDevices } from "../hooks/useAudioDevices";
+import { useAudioMode } from "../hooks/useAudioMode";
 import AudioLevelBars from "./AudioLevelBars";
 import type { PipelineSettings } from "../hooks/usePipeline";
 
@@ -17,101 +17,55 @@ function formatTime(seconds: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-const CATEGORIES: Record<string, string> = {
-  input: "Mikrofoner",
-  loopback: "Systemljud (loopback)",
-  mixed: "Mikrofon + Systemljud",
-};
-
-function DeviceDropdown({
-  devices,
-  selectedId,
-  onSelect,
-}: {
-  devices: { id: string; name: string; category: string; is_active?: boolean }[];
-  selectedId: string;
-  onSelect: (id: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  const selected = devices.find((d) => d.id === selectedId);
-  const grouped = new Map<string, typeof devices>();
-  for (const dev of devices) {
-    const cat = dev.category || "input";
-    if (!grouped.has(cat)) grouped.set(cat, []);
-    grouped.get(cat)!.push(dev);
-  }
-
+function HeadphonesIcon({ className }: { className?: string }) {
   return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="w-full px-3 py-2 rounded-lg text-sm bg-[var(--color-surface)] border border-white/10 focus:border-[var(--color-primary)] focus:outline-none transition-colors text-left flex items-center justify-between"
-      >
-        <span className={selected ? "text-[var(--color-text)]" : "text-[var(--color-text-muted)]"}>
-          {selected?.name || "Välj enhet..."}
-        </span>
-        <svg
-          className={`w-4 h-4 text-[var(--color-text-muted)] transition-transform ${open ? "rotate-180" : ""}`}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-      {open && (
-        <div className="absolute z-50 mt-1 w-full rounded-lg bg-[var(--color-surface)] border border-white/10 shadow-lg max-h-60 overflow-y-auto">
-          {Array.from(grouped.entries()).map(([cat, devs]) => (
-            <div key={cat}>
-              <div className="px-3 py-1.5 text-xs text-[var(--color-text-muted)] font-medium">
-                {CATEGORIES[cat] || cat}
-              </div>
-              {devs.map((dev) => (
-                <button
-                  key={dev.id}
-                  type="button"
-                  onClick={() => {
-                    onSelect(dev.id);
-                    setOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-1.5 text-sm transition-colors flex items-center gap-2 ${
-                    dev.id === selectedId
-                      ? "bg-[var(--color-primary)] text-white"
-                      : "text-[var(--color-text)] hover:bg-white/5"
-                  }`}
-                >
-                  {dev.is_active && (
-                    <span className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" title="Ljud detekterat" />
-                  )}
-                  {dev.name}
-                </button>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.5}
+        d="M12 3a9 9 0 00-9 9v2a3 3 0 003 3h1a1 1 0 001-1v-4a1 1 0 00-1-1H5v-1a7 7 0 0114 0v1h-2a1 1 0 00-1 1v4a1 1 0 001 1h1a3 3 0 003-3v-2a9 9 0 00-9-9z"
+      />
+    </svg>
   );
 }
 
+function SpeakersIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.5}
+        d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z"
+      />
+    </svg>
+  );
+}
+
+function ChevronIcon({ className, expanded }: { className?: string; expanded: boolean }) {
+  return (
+    <svg
+      className={`${className} transition-transform ${expanded ? "rotate-90" : ""}`}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+    </svg>
+  );
+}
+
+function deviceLabel(device: { name: string; is_console_default: boolean; is_communications_default: boolean }): string {
+  const tags: string[] = [];
+  if (device.is_console_default) tags.push("standard");
+  if (device.is_communications_default) tags.push("kommunikation");
+  return tags.length > 0 ? `${device.name} (${tags.join(", ")})` : device.name;
+}
+
 export default function RecordingView({ onRecordingComplete, settings, recorder, audioLevels: levels }: Props) {
-  const audioDevices = useAudioDevices();
-  const [showInfo, setShowInfo] = useState(false);
+  const audioMode = useAudioMode();
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const isActive = recorder.status === "recording" || recorder.status === "paused";
   const isPaused = recorder.status === "paused";
@@ -119,14 +73,15 @@ export default function RecordingView({ onRecordingComplete, settings, recorder,
   // Stop polling during recording, resume when stopped
   useEffect(() => {
     if (isActive) {
-      audioDevices.stopPolling();
+      audioMode.stopPolling();
     } else {
-      audioDevices.startPolling();
+      audioMode.startPolling();
     }
   }, [isActive]);
 
   const handleStart = async () => {
-    await recorder.start(audioDevices.selectedDeviceId);
+    const override = audioMode.manualOutputDevice ?? undefined;
+    await recorder.start(audioMode.activeMode, override);
   };
 
   const handleStop = async () => {
@@ -144,9 +99,14 @@ export default function RecordingView({ onRecordingComplete, settings, recorder,
     }
   };
 
+  const canStart = audioMode.hasMicrophone && recorder.status !== "stopping";
+
+  // The effective output device name to display
+  const displayOutputDevice = audioMode.manualOutputDevice || audioMode.outputDeviceName || "Standard";
+
   return (
     <div className="max-w-md mx-auto mt-16 text-center space-y-6 animate-fade-in">
-      {/* Microphone icon */}
+      {/* Mode icon */}
       <div
         className={`w-20 h-20 mx-auto rounded-full flex items-center justify-center glass transition-all ${
           isPaused
@@ -163,25 +123,27 @@ export default function RecordingView({ onRecordingComplete, settings, recorder,
               : {}
         }
       >
-        <svg
-          className={`w-10 h-10 ${
-            isPaused
-              ? "text-yellow-400"
-              : isActive
-                ? "text-[var(--color-error)]"
-                : "text-[var(--color-text-muted)]"
-          }`}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-            d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"
+        {audioMode.activeMode === "headphones" ? (
+          <HeadphonesIcon
+            className={`w-10 h-10 ${
+              isPaused
+                ? "text-yellow-400"
+                : isActive
+                  ? "text-[var(--color-error)]"
+                  : "text-[var(--color-text-muted)]"
+            }`}
           />
-        </svg>
+        ) : (
+          <SpeakersIcon
+            className={`w-10 h-10 ${
+              isPaused
+                ? "text-yellow-400"
+                : isActive
+                  ? "text-[var(--color-error)]"
+                  : "text-[var(--color-text-muted)]"
+            }`}
+          />
+        )}
       </div>
 
       {isActive ? (
@@ -243,60 +205,105 @@ export default function RecordingView({ onRecordingComplete, settings, recorder,
           {/* Title */}
           <h2 className="text-xl font-semibold">Inspelning</h2>
 
-          {/* Device selector */}
-          <div className="text-left space-y-1.5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <label className="text-sm text-[var(--color-text-muted)]">Ljudkälla</label>
-                <button
-                  onClick={() => setShowInfo(!showInfo)}
-                  className={`w-4 h-4 rounded-full text-[10px] font-bold leading-none flex items-center justify-center transition-colors ${
-                    showInfo
-                      ? "bg-[var(--color-primary)] text-white"
-                      : "bg-white/10 text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/20"
-                  }`}
-                  title="Visa information om ljudkällor"
-                >
-                  i
-                </button>
-              </div>
+          {/* Mode toggle */}
+          <div className="space-y-3">
+            <div className="inline-flex rounded-lg overflow-hidden border border-white/10">
               <button
-                onClick={audioDevices.refresh}
-                disabled={audioDevices.loading}
-                className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors p-1"
-                title="Uppdatera enhetslistan"
+                onClick={() => audioMode.activeMode !== "headphones" && audioMode.toggleMode()}
+                className={`px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2 ${
+                  audioMode.activeMode === "headphones"
+                    ? "bg-[var(--color-primary)] text-white"
+                    : "bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/5"
+                }`}
               >
-                <svg className={`w-3.5 h-3.5 ${audioDevices.loading ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
+                <HeadphonesIcon className="w-4 h-4" />
+                <span>Hörlurar</span>
+                {audioMode.detectedMode === "headphones" && !audioMode.isOverridden && (
+                  <span className="text-[10px] opacity-70 uppercase tracking-wider">auto</span>
+                )}
+              </button>
+              <button
+                onClick={() => audioMode.activeMode !== "speakers" && audioMode.toggleMode()}
+                className={`px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2 ${
+                  audioMode.activeMode === "speakers"
+                    ? "bg-[var(--color-primary)] text-white"
+                    : "bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/5"
+                }`}
+              >
+                <SpeakersIcon className="w-4 h-4" />
+                <span>Högtalare</span>
+                {audioMode.detectedMode === "speakers" && !audioMode.isOverridden && (
+                  <span className="text-[10px] opacity-70 uppercase tracking-wider">auto</span>
+                )}
               </button>
             </div>
-            {showInfo && (
-              <div className="glass rounded-lg px-3 py-2.5 text-xs space-y-1.5" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
-                <p><span className="font-medium text-[var(--color-text)]">Mikrofoner</span> <span className="text-[var(--color-text-muted)]">— Spelar in ljud från en mikrofon (din röst). Välj denna om du bara vill fånga vad som sägs i rummet.</span></p>
-                <p><span className="font-medium text-[var(--color-text)]">Systemljud</span> <span className="text-[var(--color-text-muted)]">— Spelar in ljud som spelas upp av datorn (t.ex. motpartens röst i ett videosamtal). Ingen mikrofon används.</span></p>
-                <p><span className="font-medium text-[var(--color-text)]">Mikrofon + Systemljud</span> <span className="text-[var(--color-text-muted)]">— Kombinerar mikrofon och systemljud i en inspelning. Bäst för videosamtal där du vill fånga både din röst och motpartens. Talare separeras automatiskt baserat på kanal.</span></p>
-              </div>
+
+            {/* Device info */}
+            <div className="space-y-0.5 text-xs text-[var(--color-text-muted)]">
+              {audioMode.hasMicrophone ? (
+                <p>Mikrofon: {audioMode.microphoneName || "Standard"}</p>
+              ) : (
+                <p className="text-[var(--color-error)]">Ingen mikrofon ansluten</p>
+              )}
+              <p>Ljud: {displayOutputDevice}</p>
+            </div>
+
+            {/* Fallback warning */}
+            {audioMode.usedFallback && !audioMode.manualOutputDevice && (
+              <p className="text-xs text-yellow-400 glass rounded-lg px-3 py-2 text-left" style={{ borderColor: "rgba(234, 179, 8, 0.3)" }}>
+                Kunde inte hitta kommunikationsenhet — använder standardutgång. Kontrollera att rätt enhet är vald i Windows ljudinställningar.
+              </p>
             )}
-            <DeviceDropdown
-              devices={audioDevices.devices}
-              selectedId={audioDevices.selectedDeviceId}
-              onSelect={audioDevices.selectDevice}
-            />
-            {audioDevices.error && (
-              <p className="text-xs text-[var(--color-error)]">{audioDevices.error}</p>
+
+            {audioMode.error && (
+              <p className="text-xs text-[var(--color-error)]">{audioMode.error}</p>
             )}
+
+            {/* Advanced section — output device override */}
+            <div className="text-left">
+              <button
+                onClick={() => setAdvancedOpen(!advancedOpen)}
+                className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors flex items-center gap-1"
+              >
+                <ChevronIcon className="w-3 h-3" expanded={advancedOpen} />
+                <span>Avancerat</span>
+              </button>
+
+              {advancedOpen && (
+                <div className="mt-2 space-y-1.5">
+                  <label className="text-xs text-[var(--color-text-muted)] block">
+                    Utgångsenhet för loopback
+                  </label>
+                  <select
+                    value={audioMode.manualOutputDevice ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      audioMode.setManualOutputDevice(val === "" ? null : val);
+                    }}
+                    className="w-full text-xs rounded-lg px-3 py-2 bg-[var(--color-surface)] text-[var(--color-text)] border border-white/10 focus:outline-none focus:border-[var(--color-primary)]"
+                  >
+                    <option value="">Automatiskt</option>
+                    {audioMode.outputDevices.map((device) => (
+                      <option key={device.name} value={device.name}>
+                        {deviceLabel(device)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Start button */}
           <button
             onClick={handleStart}
-            disabled={recorder.status === "stopping"}
+            disabled={!canStart}
             className={`px-6 py-3 rounded-lg font-medium text-sm transition-all ${
-              recorder.status === "stopping"
+              !canStart
                 ? "glass text-[var(--color-text-muted)] cursor-not-allowed"
                 : "bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white hover:shadow-[0_0_20px_rgba(37,99,235,0.25)]"
             }`}
+            title={!audioMode.hasMicrophone ? "Anslut en mikrofon för att spela in" : undefined}
           >
             {recorder.status === "stopping" ? "Stoppar..." : "Starta inspelning"}
           </button>

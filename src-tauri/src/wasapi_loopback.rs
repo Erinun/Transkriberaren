@@ -13,7 +13,7 @@ use windows::Win32::Devices::Properties;
 use windows::Win32::Media::Audio;
 use windows::Win32::Media::Multimedia;
 use windows::Win32::System::Com;
-use windows::Win32::System::Variant::VT_LPWSTR;
+use windows::Win32::System::Variant::{VT_LPWSTR, VT_UI4};
 
 /// RAII guard for COM initialization on a thread.
 struct ComGuard {
@@ -333,7 +333,8 @@ fn get_default_or_first_output(
             .GetDefaultAudioEndpoint(Audio::eRender, Audio::eCommunications)
             .ok();
 
-        // If console and communications defaults differ, prefer the one with active audio
+        // If console and communications defaults differ, always prefer communications
+        // (Teams/Zoom route meeting audio to the communications device)
         if let (Some(ref con), Some(ref com)) = (&console, &comms) {
             let con_name = get_device_name(con).unwrap_or_default();
             let com_name = get_device_name(com).unwrap_or_default();
@@ -343,26 +344,11 @@ fn get_default_or_first_output(
                     con_name,
                     com_name
                 );
-                // Check if communications device has audio (common for Teams/Zoom via headset)
-                if let Ok(meter) = com
-                    .Activate::<Audio::Endpoints::IAudioMeterInformation>(Com::CLSCTX_ALL, None)
-                {
-                    if let Ok(peak) = meter.GetPeakValue() {
-                        if peak > 0.001 {
-                            log::info!(
-                                "Using communications device '{}' (has audio, peak={})",
-                                com_name,
-                                peak
-                            );
-                            return Ok(com.clone());
-                        }
-                    }
-                }
                 log::info!(
-                    "Communications device '{}' has no audio, using console default '{}'",
-                    com_name,
-                    con_name
+                    "Using communications device '{}' (preferred for meeting audio)",
+                    com_name
                 );
+                return Ok(com.clone());
             }
         }
 
@@ -509,5 +495,305 @@ pub fn detect_active_output_devices() -> Result<Vec<ActiveOutputDevice>, String>
         }
 
         Ok(result)
+    }
+}
+
+// ─── Output device listing ─────────────────────────────────────────────────
+
+#[derive(Clone, serde::Serialize)]
+pub struct OutputDeviceInfo {
+    pub name: String,
+    pub is_console_default: bool,
+    pub is_communications_default: bool,
+}
+
+/// List all active output devices with default markers.
+pub fn list_output_devices() -> Result<Vec<OutputDeviceInfo>, String> {
+    let _com = ComGuard::new();
+    unsafe {
+        let enumerator: Audio::IMMDeviceEnumerator =
+            Com::CoCreateInstance(&Audio::MMDeviceEnumerator, None, Com::CLSCTX_ALL)
+                .map_err(|e| format!("CoCreateInstance: {}", e))?;
+
+        let default_name = enumerator
+            .GetDefaultAudioEndpoint(Audio::eRender, Audio::eConsole)
+            .ok()
+            .and_then(|d| get_device_name(&d).ok());
+        let comms_name = enumerator
+            .GetDefaultAudioEndpoint(Audio::eRender, Audio::eCommunications)
+            .ok()
+            .and_then(|d| get_device_name(&d).ok());
+
+        let collection = enumerator
+            .EnumAudioEndpoints(Audio::eRender, Audio::DEVICE_STATE_ACTIVE)
+            .map_err(|e| format!("EnumAudioEndpoints: {}", e))?;
+
+        let count = collection
+            .GetCount()
+            .map_err(|e| format!("GetCount: {}", e))?;
+
+        let mut result = Vec::new();
+        for i in 0..count {
+            let device = match collection.Item(i) {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
+            let name = match get_device_name(&device) {
+                Ok(n) => n,
+                Err(_) => continue,
+            };
+            result.push(OutputDeviceInfo {
+                is_console_default: default_name.as_deref() == Some(name.as_str()),
+                is_communications_default: comms_name.as_deref() == Some(name.as_str()),
+                name,
+            });
+        }
+
+        Ok(result)
+    }
+}
+
+// ─── Simplified audio mode detection ────────────────────────────────────────
+
+#[derive(Clone, serde::Serialize)]
+pub struct AudioModeInfo {
+    pub detected_mode: String,
+    pub has_microphone: bool,
+    pub output_device_name: String,
+    pub microphone_name: String,
+    pub used_fallback: bool,
+}
+
+/// PKEY_AudioEndpoint_FormFactor: {1da5d803-d492-4edd-8c23-e0c0ffee7f0e}, pid=0
+const PKEY_AUDIOENDPOINT_FORMFACTOR: windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY =
+    windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY {
+        fmtid: windows::core::GUID::from_values(
+            0x1da5d803,
+            0xd492,
+            0x4edd,
+            [0x8c, 0x23, 0xe0, 0xc0, 0xff, 0xee, 0x7f, 0x0e],
+        ),
+        pid: 0,
+    };
+
+fn get_device_form_factor(device: &Audio::IMMDevice) -> Result<u32, String> {
+    unsafe {
+        let store = device
+            .OpenPropertyStore(Com::STGM_READ)
+            .map_err(|e| format!("OpenPropertyStore: {}", e))?;
+
+        let prop_value = match store.GetValue(
+            &PKEY_AUDIOENDPOINT_FORMFACTOR as *const _ as *const _,
+        ) {
+            Ok(v) => v,
+            Err(_) => return Ok(1), // default to speakers
+        };
+
+        let prop_variant = &prop_value.as_raw().Anonymous.Anonymous;
+        if prop_variant.vt != VT_UI4.0 {
+            return Ok(1); // default to speakers
+        }
+
+        let form_factor = *(&prop_variant.Anonymous as *const _ as *const u32);
+        Ok(form_factor)
+    }
+}
+
+fn get_device_container_id(device: &Audio::IMMDevice) -> Result<windows::core::GUID, String> {
+    unsafe {
+        let store = device
+            .OpenPropertyStore(Com::STGM_READ)
+            .map_err(|e| format!("OpenPropertyStore: {}", e))?;
+
+        let prop_value = store
+            .GetValue(
+                &Properties::DEVPKEY_Device_ContainerId as *const _ as *const _,
+            )
+            .map_err(|e| format!("GetValue ContainerId: {}", e))?;
+
+        let prop_variant = &prop_value.as_raw().Anonymous.Anonymous;
+        // VT_CLSID = 72
+        if prop_variant.vt != 72 {
+            return Err(format!(
+                "ContainerId property has unexpected vt={}",
+                prop_variant.vt
+            ));
+        }
+
+        let guid_ptr =
+            *(&prop_variant.Anonymous as *const _ as *const *const windows::core::GUID);
+        let guid = *guid_ptr;
+        Ok(guid)
+    }
+}
+
+fn find_matching_capture_device(
+    enumerator: &Audio::IMMDeviceEnumerator,
+    target_container_id: &windows::core::GUID,
+) -> Result<Option<String>, String> {
+    unsafe {
+        let collection = enumerator
+            .EnumAudioEndpoints(Audio::eCapture, Audio::DEVICE_STATE_ACTIVE)
+            .map_err(|e| format!("EnumAudioEndpoints(capture): {}", e))?;
+
+        let count = collection
+            .GetCount()
+            .map_err(|e| format!("GetCount: {}", e))?;
+
+        let mut matches = Vec::new();
+
+        for i in 0..count {
+            let device = match collection.Item(i) {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
+
+            let container_id = match get_device_container_id(&device) {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
+
+            let name = get_device_name(&device).unwrap_or_else(|_| format!("capture-{}", i));
+
+            if container_id == *target_container_id {
+                log::info!(
+                    "Capture device '{}' matches output container ID",
+                    name
+                );
+                matches.push(name);
+            }
+        }
+
+        log::info!(
+            "Container ID matching: {} capture devices checked, {} matched",
+            count,
+            matches.len()
+        );
+
+        if matches.len() == 1 {
+            Ok(Some(matches.remove(0)))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+pub fn detect_audio_mode() -> Result<AudioModeInfo, String> {
+    let _com = ComGuard::new();
+
+    unsafe {
+        let enumerator: Audio::IMMDeviceEnumerator =
+            Com::CoCreateInstance(&Audio::MMDeviceEnumerator, None, Com::CLSCTX_ALL)
+                .map_err(|e| format!("CoCreateInstance: {}", e))?;
+
+        let output_device = get_default_or_first_output(&enumerator)?;
+        let output_device_name =
+            get_device_name(&output_device).unwrap_or_else(|_| "okänd".into());
+        let form_factor = get_device_form_factor(&output_device).unwrap_or(1);
+
+        // FormFactor 3 = Headphones, 4 = Head Mounted Display
+        let detected_mode = if form_factor == 3 || form_factor == 4 {
+            "headphones".to_string()
+        } else {
+            "speakers".to_string()
+        };
+
+        // Check if we have a separate communications device
+        let console_name = enumerator
+            .GetDefaultAudioEndpoint(Audio::eRender, Audio::eConsole)
+            .ok()
+            .and_then(|d| get_device_name(&d).ok());
+        let comms_name = enumerator
+            .GetDefaultAudioEndpoint(Audio::eRender, Audio::eCommunications)
+            .ok()
+            .and_then(|d| get_device_name(&d).ok());
+        let used_fallback = match (&console_name, &comms_name) {
+            (Some(con), Some(com)) => con == com,
+            (_, None) => true,
+            _ => false,
+        };
+        if used_fallback {
+            log::info!(
+                "No separate communications device, using console default '{}'",
+                output_device_name
+            );
+        }
+
+        // Check for default capture device (microphone)
+        let default_mic = enumerator
+            .GetDefaultAudioEndpoint(Audio::eCapture, Audio::eConsole)
+            .ok();
+
+        let default_mic = match default_mic {
+            Some(mic) => mic,
+            None => {
+                log::info!(
+                    "Audio mode detected: {} (form_factor={}), mic='(none)', output='{}'",
+                    detected_mode,
+                    form_factor,
+                    output_device_name
+                );
+                return Ok(AudioModeInfo {
+                    detected_mode,
+                    has_microphone: false,
+                    output_device_name,
+                    microphone_name: "".into(),
+                    used_fallback,
+                });
+            }
+        };
+
+        let default_mic_name =
+            get_device_name(&default_mic).unwrap_or_else(|_| "okänd mikrofon".into());
+
+        let microphone_name = if detected_mode == "headphones" {
+            // Try to find a capture device with the same container ID as the output device
+            match get_device_container_id(&output_device) {
+                Ok(container_id) => {
+                    match find_matching_capture_device(&enumerator, &container_id) {
+                        Ok(Some(matched_name)) => {
+                            log::info!(
+                                "Headphones mode: matched mic '{}' via container ID",
+                                matched_name
+                            );
+                            matched_name
+                        }
+                        _ => {
+                            log::info!(
+                                "Headphones mode: no container ID match, using default mic '{}'",
+                                default_mic_name
+                            );
+                            default_mic_name.clone()
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::info!(
+                        "Headphones mode: couldn't get container ID ({}), using default mic '{}'",
+                        e,
+                        default_mic_name
+                    );
+                    default_mic_name.clone()
+                }
+            }
+        } else {
+            default_mic_name.clone()
+        };
+
+        log::info!(
+            "Audio mode detected: {} (form_factor={}), mic='{}', output='{}'",
+            detected_mode,
+            form_factor,
+            microphone_name,
+            output_device_name
+        );
+
+        Ok(AudioModeInfo {
+            detected_mode,
+            has_microphone: true,
+            output_device_name,
+            microphone_name,
+            used_fallback,
+        })
     }
 }

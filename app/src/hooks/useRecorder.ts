@@ -66,10 +66,13 @@ export function useRecorder() {
     return () => { cancelled = true; unlisteners.forEach((fn) => fn()); };
   }, []);
 
-  const start = useCallback(async (deviceId?: string) => {
+  const start = useCallback(async (mode: string, outputDeviceOverride?: string) => {
     setState({ status: "recording", elapsedSeconds: 0, error: null, warning: null, deviceName: null });
     try {
-      const deviceName = await invoke<string>("start_recording", { deviceId });
+      const deviceName = await invoke<string>("start_recording", {
+        mode,
+        outputDeviceOverride: outputDeviceOverride ?? null,
+      });
       setState((s) => ({ ...s, deviceName }));
     } catch (err: any) {
       const msg = typeof err === "string" ? err : err.message ?? "";

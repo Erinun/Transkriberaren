@@ -1,4 +1,4 @@
-use crate::audio_capture::{self, AudioDevice, RecorderState, RecordingResult};
+use crate::audio_capture::{self, RecorderState, RecordingResult};
 use crate::meeting_detector::MeetingDetector;
 use crate::ollama::CancellationMap;
 use crate::sidecar::{run_python_pipeline, TranscriptionConfig};
@@ -64,17 +64,23 @@ pub async fn write_text_to_file(content: String, destination: String) -> Result<
 }
 
 #[tauri::command]
-pub fn list_audio_devices() -> Vec<AudioDevice> {
-    audio_capture::list_audio_devices()
+pub fn detect_audio_mode() -> Result<crate::wasapi_loopback::AudioModeInfo, String> {
+    crate::wasapi_loopback::detect_audio_mode()
+}
+
+#[tauri::command]
+pub fn list_output_devices() -> Result<Vec<crate::wasapi_loopback::OutputDeviceInfo>, String> {
+    crate::wasapi_loopback::list_output_devices()
 }
 
 #[tauri::command]
 pub async fn start_recording(
     state: State<'_, RecorderState>,
     app: AppHandle,
-    device_id: Option<String>,
+    mode: String,
+    output_device_override: Option<String>,
 ) -> Result<String, String> {
-    audio_capture::start_recording(&state, app, device_id)
+    audio_capture::start_recording(&state, app, mode, output_device_override)
 }
 
 #[tauri::command]
@@ -123,10 +129,6 @@ pub async fn get_recording_status(
     }
 }
 
-#[tauri::command]
-pub fn detect_active_audio() -> Result<Vec<crate::wasapi_loopback::ActiveOutputDevice>, String> {
-    crate::wasapi_loopback::detect_active_output_devices()
-}
 
 #[tauri::command]
 pub async fn read_file_content(path: String) -> Result<String, String> {

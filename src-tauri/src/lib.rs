@@ -8,7 +8,7 @@ mod sidecar_manager;
 pub(crate) mod wasapi_loopback;
 
 use audio_capture::RecorderState;
-use commands::{copy_file_to, detect_active_audio, get_default_output_dir, get_recording_status, list_audio_devices, ollama_cancel, ollama_cancel_all, ollama_check_health, ollama_generate, ollama_list_models, open_file, pause_recording, read_file_content, resume_recording, run_transcription, set_meeting_detection, start_recording, stop_recording, write_binary_to_file, write_text_to_file};
+use commands::{copy_file_to, detect_audio_mode, get_default_output_dir, get_recording_status, list_output_devices, ollama_cancel, ollama_cancel_all, ollama_check_health, ollama_generate, ollama_list_models, open_file, pause_recording, read_file_content, resume_recording, run_transcription, set_meeting_detection, start_recording, stop_recording, write_binary_to_file, write_text_to_file};
 use meeting_detector::MeetingDetector;
 use sidecar_manager::SidecarManager;
 use tauri::{Emitter, Manager};
@@ -107,7 +107,8 @@ pub fn run() {
             run_transcription,
             open_file,
             get_default_output_dir,
-            list_audio_devices,
+            detect_audio_mode,
+            list_output_devices,
             start_recording,
             stop_recording,
             pause_recording,
@@ -123,7 +124,6 @@ pub fn run() {
             ollama_cancel_all,
             set_meeting_detection,
             get_recording_status,
-            detect_active_audio,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

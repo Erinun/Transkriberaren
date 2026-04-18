@@ -7,7 +7,7 @@ use ringbuf::{
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use tauri::{AppHandle, Emitter};
@@ -15,15 +15,6 @@ use tauri::{AppHandle, Emitter};
 type SharedWriter = Arc<Mutex<Option<WavWriter<BufWriter<File>>>>>;
 type SharedProducer = Arc<Mutex<ringbuf::HeapProd<f32>>>;
 type SharedConsumer = Arc<Mutex<ringbuf::HeapCons<f32>>>;
-
-#[derive(Clone, serde::Serialize)]
-pub struct AudioDevice {
-    pub id: String,
-    pub name: String,
-    pub is_loopback: bool,
-    pub category: String,
-    pub is_active: bool,
-}
 
 #[derive(Clone, serde::Serialize)]
 pub struct RecordingResult {
@@ -84,198 +75,6 @@ struct AudioLevel {
     level: f32,
 }
 
-/// Which device to use on the recording thread.
-#[derive(Clone)]
-enum DeviceSelection {
-    DefaultInput,
-    Loopback,
-    NamedLoopback(String),
-    MicAndSystem,
-    MicAndNamedOutput(String),
-    NamedInput(String),
-}
-
-/// Find the default output device, falling back to the first available output device.
-fn find_default_or_first_output_device(host: &cpal::Host) -> Result<cpal::Device, String> {
-    if let Some(device) = host.default_output_device() {
-        return Ok(device);
-    }
-    // Default unavailable — try the first output device we can find
-    let mut output_devices = host
-        .output_devices()
-        .map_err(|e| format!("Kunde inte lista utgångsenheter: {}", e))?;
-    output_devices
-        .next()
-        .ok_or_else(|| "Ingen utgångsenhet hittades".to_string())
-}
-
-/// Find an output device by name.
-fn find_output_device_by_name(name: &str) -> Result<cpal::Device, String> {
-    let host = cpal::default_host();
-    let output_devices = host
-        .output_devices()
-        .map_err(|e| format!("Kunde inte lista utgångsenheter: {}", e))?;
-    output_devices
-        .into_iter()
-        .find(|d| d.name().ok().as_deref() == Some(name))
-        .ok_or_else(|| format!("Utgångsenheten '{}' hittades inte", name))
-}
-
-pub fn list_audio_devices() -> Vec<AudioDevice> {
-    let host = cpal::default_host();
-    let mut devices = Vec::new();
-
-    // Detect which output devices are currently playing audio
-    let active_devices = crate::wasapi_loopback::detect_active_output_devices().unwrap_or_default();
-    let active_names: std::collections::HashSet<String> = active_devices
-        .iter()
-        .filter(|d| d.peak_level > 0.001)
-        .map(|d| d.name.clone())
-        .collect();
-    log::info!("Active output devices: {:?}", active_names);
-
-    // Always include "default input"
-    let default_input_name = host
-        .default_input_device()
-        .and_then(|d| d.name().ok());
-
-    devices.push(AudioDevice {
-        id: "default_input".to_string(),
-        name: "Standardmikrofon".to_string(),
-        is_loopback: false,
-        category: "input".to_string(),
-        is_active: false,
-    });
-
-    // Add named input devices (skip the one matching default to avoid duplicate)
-    if let Ok(input_devices) = host.input_devices() {
-        for dev in input_devices {
-            if let Ok(name) = dev.name() {
-                if Some(&name) == default_input_name.as_ref() {
-                    continue;
-                }
-                devices.push(AudioDevice {
-                    id: format!("input:{}", name),
-                    name,
-                    is_loopback: false,
-                    category: "input".to_string(),
-                    is_active: false,
-                });
-            }
-        }
-    }
-
-    // Enumerate ALL output devices for loopback and mixed options.
-    // Use WASAPI names (from active_devices) to ensure consistency with loopback capture.
-    let default_output_name = active_devices
-        .iter()
-        .find(|d| d.is_default)
-        .map(|d| d.name.clone());
-    log::info!("default_output_name (console): {:?}", default_output_name);
-
-    let comms_default_name = active_devices
-        .iter()
-        .find(|d| d.is_communications_default && !d.is_default)
-        .map(|d| d.name.clone());
-    log::info!("comms_default_name: {:?}", comms_default_name);
-
-    let output_names: Vec<String> = active_devices.iter().map(|d| d.name.clone()).collect();
-    log::info!("Total output devices with names: {}", output_names.len());
-
-    let has_default = default_output_name.is_some();
-
-    if !output_names.is_empty() {
-        // Check if default output is active
-        let default_active = default_output_name
-            .as_ref()
-            .map(|n| active_names.contains(n.as_str()))
-            .unwrap_or(false);
-        let any_active = !active_names.is_empty();
-
-        // Generic loopback (uses default output, or first available as fallback)
-        devices.push(AudioDevice {
-            id: "loopback".to_string(),
-            name: "Systemljud (standard)".to_string(),
-            is_loopback: true,
-            category: "loopback".to_string(),
-            is_active: default_active || any_active,
-        });
-
-        // Communications device loopback (if different from console default)
-        if let Some(ref comms_name) = comms_default_name {
-            let comms_active = active_names.contains(comms_name.as_str());
-            devices.push(AudioDevice {
-                id: format!("loopback:{}", comms_name),
-                name: format!("Systemljud via {} (samtal)", comms_name),
-                is_loopback: true,
-                category: "loopback".to_string(),
-                is_active: comms_active,
-            });
-        }
-
-        // Per-output-device loopback entries (skip default and comms — already listed)
-        for name in &output_names {
-            let is_console_default = has_default && Some(name) == default_output_name.as_ref();
-            let is_comms_default = comms_default_name.as_ref() == Some(name);
-            if is_console_default || is_comms_default {
-                continue;
-            }
-            let active = active_names.contains(name.as_str());
-            devices.push(AudioDevice {
-                id: format!("loopback:{}", name),
-                name: format!("Systemljud via {}", name),
-                is_loopback: true,
-                category: "loopback".to_string(),
-                is_active: active,
-            });
-        }
-
-        // Generic mic + system
-        devices.push(AudioDevice {
-            id: "mic_and_system".to_string(),
-            name: "Mikrofon + Systemljud (standard)".to_string(),
-            is_loopback: false,
-            category: "mixed".to_string(),
-            is_active: default_active || any_active,
-        });
-
-        // Communications device mixed (if different from console default)
-        if let Some(ref comms_name) = comms_default_name {
-            let comms_active = active_names.contains(comms_name.as_str());
-            devices.push(AudioDevice {
-                id: format!("mic_and_output:{}", comms_name),
-                name: format!("Mikrofon + {} (samtal)", comms_name),
-                is_loopback: false,
-                category: "mixed".to_string(),
-                is_active: comms_active,
-            });
-        }
-
-        // Per-output-device mic + output entries (skip default and comms — already listed)
-        for name in &output_names {
-            let is_console_default = has_default && Some(name) == default_output_name.as_ref();
-            let is_comms_default = comms_default_name.as_ref() == Some(name);
-            if is_console_default || is_comms_default {
-                continue;
-            }
-            let active = active_names.contains(name.as_str());
-            devices.push(AudioDevice {
-                id: format!("mic_and_output:{}", name),
-                name: format!("Mikrofon + {}", name),
-                is_loopback: false,
-                category: "mixed".to_string(),
-                is_active: active,
-            });
-        }
-    }
-
-    log::info!(
-        "Returning {} devices: {:?}",
-        devices.len(),
-        devices.iter().map(|d| format!("{}({}, active={})", d.id, d.category, d.is_active)).collect::<Vec<_>>()
-    );
-    devices
-}
 
 /// Linearly resample a buffer of samples to a target length.
 fn resample_linear(input: &[f32], output_len: usize) -> Vec<f32> {
@@ -303,473 +102,35 @@ fn resample_linear(input: &[f32], output_len: usize) -> Vec<f32> {
 pub fn start_recording(
     state: &RecorderState,
     app: AppHandle,
-    device_id: Option<String>,
+    mode: String,
+    output_device_override: Option<String>,
 ) -> Result<String, String> {
     let guard = state.inner.lock().map_err(|e| e.to_string())?;
     if guard.is_some() {
         return Err("Inspelning pågår redan".to_string());
     }
 
-    let selection = match device_id.as_deref() {
-        None | Some("default_input") => DeviceSelection::DefaultInput,
-        Some("loopback") => DeviceSelection::Loopback,
-        Some("mic_and_system") => DeviceSelection::MicAndSystem,
-        Some(id) if id.starts_with("loopback:") => {
-            DeviceSelection::NamedLoopback(id["loopback:".len()..].to_string())
-        }
-        Some(id) if id.starts_with("mic_and_output:") => {
-            DeviceSelection::MicAndNamedOutput(id["mic_and_output:".len()..].to_string())
-        }
-        Some(id) if id.starts_with("input:") => {
-            DeviceSelection::NamedInput(id["input:".len()..].to_string())
-        }
-        Some(other) => return Err(format!("Okänt enhets-id: {}", other)),
-    };
+    let mode_info = crate::wasapi_loopback::detect_audio_mode()?;
+    if !mode_info.has_microphone {
+        return Err("Ingen mikrofon hittades".to_string());
+    }
 
     let host = cpal::default_host();
 
-    match selection {
-        DeviceSelection::MicAndSystem => {
-            start_recording_mixed(guard, host, app, None)
+    match mode.as_str() {
+        "headphones" | "speakers" => {
+            let output_name = if let Some(ref override_name) = output_device_override {
+                log::info!("Using manually selected output device: '{}'", override_name);
+                Some(override_name.clone())
+            } else if mode_info.output_device_name.is_empty() {
+                None
+            } else {
+                Some(mode_info.output_device_name.clone())
+            };
+            start_recording_mixed(guard, host, app, output_name, Some(mode_info.microphone_name))
         }
-        DeviceSelection::MicAndNamedOutput(ref name) => {
-            start_recording_mixed(guard, host, app, Some(name.clone()))
-        }
-        DeviceSelection::Loopback => {
-            start_recording_loopback_single(guard, app, None)
-        }
-        DeviceSelection::NamedLoopback(ref name) => {
-            start_recording_loopback_single(guard, app, Some(name.clone()))
-        }
-        _ => {
-            start_recording_single(guard, host, app, selection)
-        }
+        _ => Err(format!("Okänt inspelningsläge: {}", mode)),
     }
-}
-
-/// Start loopback-only recording using direct WASAPI (polling-based).
-fn start_recording_loopback_single(
-    mut guard: std::sync::MutexGuard<'_, Option<RecordingHandle>>,
-    app: AppHandle,
-    output_device_name: Option<String>,
-) -> Result<String, String> {
-    let sample_rate = crate::wasapi_loopback::get_output_device_sample_rate(
-        output_device_name.as_deref(),
-    )?;
-
-    let device_name = match &output_device_name {
-        Some(name) => format!("Systemljud via {}", name),
-        None => "Systemljud (loopback)".to_string(),
-    };
-
-    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-    let path = std::env::temp_dir().join(format!("motesskribent_rec_{}.wav", timestamp));
-
-    let spec = WavSpec {
-        channels: 1,
-        sample_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-
-    let writer = WavWriter::create(&path, spec)
-        .map_err(|e| format!("Kunde inte skapa inspelningsfil: {}", e))?;
-    let writer: SharedWriter = Arc::new(Mutex::new(Some(writer)));
-
-    let running = Arc::new(AtomicBool::new(true));
-    let audio_level = Arc::new(AtomicU32::new(0u32));
-    let paused = Arc::new(AtomicBool::new(false));
-    let paused_duration = Arc::new(Mutex::new(0.0f64));
-    let pause_start: Arc<Mutex<Option<std::time::Instant>>> = Arc::new(Mutex::new(None));
-
-    let writer_thread = writer.clone();
-    let running_thread = running.clone();
-    let audio_level_thread = audio_level.clone();
-    let paused_thread = paused.clone();
-    let return_name = device_name.clone();
-    let lb_name = output_device_name.clone();
-    let app_thread = app.clone();
-
-    let mic_thread = Some(std::thread::spawn(move || {
-        let capture = match crate::wasapi_loopback::WasapiLoopbackCapture::new(lb_name.as_deref())
-        {
-            Ok(c) => c,
-            Err(e) => {
-                let _ = app_thread.emit(
-                    "recording-error",
-                    RecordingError { message: e },
-                );
-                return;
-            }
-        };
-
-        if let Err(e) = capture.start() {
-            let _ = app_thread.emit(
-                "recording-error",
-                RecordingError { message: e },
-            );
-            return;
-        }
-
-        log::info!("WASAPI loopback-only capture started (polling mode)");
-
-        while running_thread.load(Ordering::Relaxed) {
-            let is_paused = paused_thread.load(Ordering::Relaxed);
-
-            let mut samples = Vec::new();
-            match capture.capture_samples(&mut samples) {
-                Ok(_) => {
-                    if samples.is_empty() {
-                        std::thread::sleep(std::time::Duration::from_millis(5));
-                        continue;
-                    }
-
-                    if !is_paused {
-                        if let Ok(mut guard) = writer_thread.lock() {
-                            if let Some(ref mut w) = *guard {
-                                for &s in &samples {
-                                    let sample = (s.clamp(-1.0, 1.0) * i16::MAX as f32)
-                                        .clamp(i16::MIN as f32, i16::MAX as f32)
-                                        as i16;
-                                    if w.write_sample(sample).is_err() {
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Audio level
-                    if is_paused {
-                        audio_level_thread.store(0u32, Ordering::Relaxed);
-                    } else {
-                        let sum_sq: f32 = samples.iter().map(|s| s * s).sum();
-                        let rms = (sum_sq / samples.len() as f32).sqrt();
-                        audio_level_thread.store(rms.to_bits(), Ordering::Relaxed);
-                    }
-                }
-                Err(e) => {
-                    log::error!("Loopback capture error: {}", e);
-                    std::thread::sleep(std::time::Duration::from_millis(50));
-                }
-            }
-        }
-
-        capture.stop();
-        log::info!("WASAPI loopback-only capture ended");
-    }));
-
-    spawn_tick_and_level_emitters(&running, &paused, &paused_duration, &pause_start, &audio_level, &app);
-
-    *guard = Some(RecordingHandle {
-        running,
-        paused,
-        paused_duration,
-        pause_start,
-        writer,
-        audio_level,
-        mic_thread,
-        loopback_thread: None,
-        mixer_thread: None,
-        path,
-        device_name,
-    });
-
-    Ok(return_name)
-}
-
-/// Start recording from a single device (mic or named input).
-fn start_recording_single(
-    mut guard: std::sync::MutexGuard<'_, Option<RecordingHandle>>,
-    host: cpal::Host,
-    app: AppHandle,
-    selection: DeviceSelection,
-) -> Result<String, String> {
-    let (device, supported_config, device_name) = match &selection {
-        DeviceSelection::DefaultInput => {
-            let device = host
-                .default_input_device()
-                .ok_or_else(|| "Ingen mikrofon hittades".to_string())?;
-            let name = device.name().unwrap_or_else(|_| "Standardmikrofon".to_string());
-            let cfg = device
-                .default_input_config()
-                .map_err(|e| format!("Kunde inte öppna mikrofonen: {}", e))?;
-            (device, cfg, name)
-        }
-        DeviceSelection::NamedInput(target_name) => {
-            let input_devices = host
-                .input_devices()
-                .map_err(|e| format!("Kunde inte lista enheter: {}", e))?;
-            let device = input_devices
-                .into_iter()
-                .find(|d| d.name().ok().as_deref() == Some(target_name.as_str()))
-                .ok_or_else(|| format!("Enheten '{}' hittades inte", target_name))?;
-            let name = device.name().unwrap_or_else(|_| target_name.clone());
-            let cfg = device
-                .default_input_config()
-                .map_err(|e| format!("Kunde inte öppna enheten: {}", e))?;
-            (device, cfg, name)
-        }
-        // Loopback/Mixed handled by separate functions
-        _ => unreachable!(),
-    };
-
-    let _ = device; // We only needed it for config; will re-acquire on thread
-
-    let sample_rate = supported_config.sample_rate().0;
-    let sample_format = supported_config.sample_format();
-    let channels = supported_config.channels();
-    let num_channels = channels as usize;
-
-    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-    let path = std::env::temp_dir().join(format!("motesskribent_rec_{}.wav", timestamp));
-
-    let spec = WavSpec {
-        channels: 1,
-        sample_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-
-    let writer = WavWriter::create(&path, spec)
-        .map_err(|e| format!("Kunde inte skapa inspelningsfil: {}", e))?;
-    let writer: SharedWriter = Arc::new(Mutex::new(Some(writer)));
-
-    let running = Arc::new(AtomicBool::new(true));
-    let audio_level = Arc::new(AtomicU32::new(0u32));
-
-    let paused = Arc::new(AtomicBool::new(false));
-    let paused_duration = Arc::new(Mutex::new(0.0f64));
-    let pause_start: Arc<Mutex<Option<std::time::Instant>>> = Arc::new(Mutex::new(None));
-
-    let writer_thread = writer.clone();
-    let running_thread = running.clone();
-    let audio_level_thread = audio_level.clone();
-    let paused_thread = paused.clone();
-    let app_err = app.clone();
-    let selection_clone = selection.clone();
-    let return_name = device_name.clone();
-
-    let mic_thread = Some(std::thread::spawn(move || {
-        // Re-acquire device on this thread
-        let host = cpal::default_host();
-        let device = match &selection_clone {
-            DeviceSelection::DefaultInput => match host.default_input_device() {
-                Some(d) => d,
-                None => {
-                    let _ = app_err.emit(
-                        "recording-error",
-                        RecordingError {
-                            message: "Ingen mikrofon hittades".to_string(),
-                        },
-                    );
-                    return;
-                }
-            },
-            DeviceSelection::NamedInput(target_name) => {
-                match host.input_devices() {
-                    Ok(devs) => {
-                        match devs
-                            .into_iter()
-                            .find(|d| d.name().ok().as_deref() == Some(target_name.as_str()))
-                        {
-                            Some(d) => d,
-                            None => {
-                                let _ = app_err.emit(
-                                    "recording-error",
-                                    RecordingError {
-                                        message: format!("Enheten '{}' hittades inte", target_name),
-                                    },
-                                );
-                                return;
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        let _ = app_err.emit(
-                            "recording-error",
-                            RecordingError {
-                                message: format!("Kunde inte lista enheter: {}", e),
-                            },
-                        );
-                        return;
-                    }
-                }
-            }
-            // Loopback/Mixed handled by separate functions
-            _ => unreachable!(),
-        };
-
-        let config = match device.default_input_config() {
-            Ok(c) => c,
-            Err(e) => {
-                let _ = app_err.emit(
-                    "recording-error",
-                    RecordingError {
-                        message: format!("Kunde inte öppna mikrofonen: {}", e),
-                    },
-                );
-                return;
-            }
-        };
-
-        let stream_config: cpal::StreamConfig = config.into();
-        let writer_cb = writer_thread.clone();
-        let running_cb = running_thread.clone();
-        let audio_level_cb = audio_level_thread.clone();
-        let paused_cb = paused_thread.clone();
-        let app_err2 = app_err.clone();
-
-        let err_fn = move |err: cpal::StreamError| {
-            let _ = app_err2.emit(
-                "recording-error",
-                RecordingError {
-                    message: format!("Inspelningsfel: {}", err),
-                },
-            );
-        };
-
-        let stream = match sample_format {
-            cpal::SampleFormat::F32 => device.build_input_stream(
-                &stream_config,
-                move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                    if !running_cb.load(Ordering::Relaxed) {
-                        return;
-                    }
-                    let is_paused = paused_cb.load(Ordering::Relaxed);
-                    if !is_paused {
-                        if let Ok(mut guard) = writer_cb.lock() {
-                            if let Some(ref mut w) = *guard {
-                                for frame in data.chunks(num_channels) {
-                                    let mono: f32 =
-                                        frame.iter().sum::<f32>() / num_channels as f32;
-                                    let sample = (mono * i16::MAX as f32)
-                                        .clamp(i16::MIN as f32, i16::MAX as f32)
-                                        as i16;
-                                    if w.write_sample(sample).is_err() {
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if is_paused {
-                        audio_level_cb.store(0u32, Ordering::Relaxed);
-                    } else {
-                        let frame_count = data.len() / num_channels;
-                        if frame_count > 0 {
-                            let sum_sq: f32 = data.chunks(num_channels)
-                                .map(|f| {
-                                    let m: f32 = f.iter().sum::<f32>() / num_channels as f32;
-                                    m * m
-                                })
-                                .sum();
-                            let rms = (sum_sq / frame_count as f32).sqrt();
-                            audio_level_cb.store(rms.to_bits(), Ordering::Relaxed);
-                        }
-                    }
-                },
-                err_fn,
-                None,
-            ),
-            cpal::SampleFormat::I16 => {
-                let audio_level_i16 = audio_level_cb.clone();
-                device.build_input_stream(
-                    &stream_config,
-                    move |data: &[i16], _: &cpal::InputCallbackInfo| {
-                        if !running_cb.load(Ordering::Relaxed) {
-                            return;
-                        }
-                        let is_paused = paused_cb.load(Ordering::Relaxed);
-                        if !is_paused {
-                            if let Ok(mut guard) = writer_cb.lock() {
-                                if let Some(ref mut w) = *guard {
-                                    for frame in data.chunks(num_channels) {
-                                        let mono: i32 = frame.iter().map(|&s| s as i32).sum::<i32>()
-                                            / num_channels as i32;
-                                        if w.write_sample(mono as i16).is_err() {
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        if is_paused {
-                            audio_level_i16.store(0u32, Ordering::Relaxed);
-                        } else {
-                            let frame_count = data.len() / num_channels;
-                            if frame_count > 0 {
-                                let sum_sq: f32 = data.chunks(num_channels)
-                                    .map(|f| {
-                                        let m: f32 = f.iter().map(|&s| s as f32 / 32768.0).sum::<f32>() / num_channels as f32;
-                                        m * m
-                                    })
-                                    .sum();
-                                let rms = (sum_sq / frame_count as f32).sqrt();
-                                audio_level_i16.store(rms.to_bits(), Ordering::Relaxed);
-                            }
-                        }
-                    },
-                    err_fn,
-                    None,
-                )
-            }
-            format => {
-                let _ = app_err.emit(
-                    "recording-error",
-                    RecordingError {
-                        message: format!("Formatet {:?} stöds inte", format),
-                    },
-                );
-                return;
-            }
-        };
-
-        let stream = match stream {
-            Ok(s) => s,
-            Err(e) => {
-                let _ = app_err.emit(
-                    "recording-error",
-                    RecordingError {
-                        message: format!("Kunde inte öppna enheten: {}", e),
-                    },
-                );
-                return;
-            }
-        };
-
-        if let Err(e) = stream.play() {
-            let _ = app_err.emit(
-                "recording-error",
-                RecordingError {
-                    message: format!("Kunde inte starta inspelning: {}", e),
-                },
-            );
-            return;
-        }
-
-        while running_thread.load(Ordering::Relaxed) {
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
-    }));
-
-    spawn_tick_and_level_emitters(&running, &paused, &paused_duration, &pause_start, &audio_level, &app);
-
-    *guard = Some(RecordingHandle {
-        running,
-        paused,
-        paused_duration,
-        pause_start,
-        writer,
-        audio_level,
-        mic_thread,
-        loopback_thread: None,
-        mixer_thread: None,
-        path,
-        device_name,
-    });
-
-    Ok(return_name)
 }
 
 /// Start recording from both mic and system audio simultaneously (mixed).
@@ -778,11 +139,19 @@ fn start_recording_mixed(
     host: cpal::Host,
     app: AppHandle,
     output_device_name: Option<String>,
+    mic_device_name: Option<String>,
 ) -> Result<String, String> {
-    // Verify mic exists
-    let mic_device = host
-        .default_input_device()
-        .ok_or_else(|| "Ingen mikrofon hittades".to_string())?;
+    // Find mic device by name, or fall back to default
+    let mic_device = if let Some(ref name) = mic_device_name {
+        host.input_devices()
+            .map_err(|e| format!("Kunde inte lista mikrofoner: {}", e))?
+            .find(|d| d.name().ok().as_deref() == Some(name.as_str()))
+            .or_else(|| host.default_input_device())
+            .ok_or_else(|| "Ingen mikrofon hittades".to_string())?
+    } else {
+        host.default_input_device()
+            .ok_or_else(|| "Ingen mikrofon hittades".to_string())?
+    };
 
     let mic_config = mic_device
         .default_input_config()
@@ -816,26 +185,27 @@ fn start_recording_mixed(
     let paused_duration = Arc::new(Mutex::new(0.0f64));
     let pause_start: Arc<Mutex<Option<std::time::Instant>>> = Arc::new(Mutex::new(None));
     let audio_level = Arc::new(AtomicU32::new(0u32));
-    let device_name = match &output_device_name {
-        Some(name) => format!("Mikrofon + {}", name),
-        None => "Mikrofon + Systemljud".to_string(),
-    };
+    let mic_name_display = mic_device.name().unwrap_or_else(|_| "Mikrofon".to_string());
+    let output_name_display = output_device_name.as_deref().unwrap_or("Systemljud");
+    let device_name = format!("{} + {}", mic_name_display, output_name_display);
 
-    // Ring buffer capacity: ~2 seconds at mic sample rate
-    let rb_capacity = (mic_sample_rate as usize) * 2;
+    // Ring buffer capacity: ~2 seconds at each stream's own sample rate
+    let mic_rb_capacity = (mic_sample_rate as usize) * 2;
+    let lb_rb_capacity = (loopback_sample_rate as usize) * 2;
 
-    let mic_rb = HeapRb::<f32>::new(rb_capacity);
+    let mic_rb = HeapRb::<f32>::new(mic_rb_capacity);
     let (mic_producer, mic_consumer) = mic_rb.split();
 
-    let loopback_rb = HeapRb::<f32>::new(rb_capacity);
+    let loopback_rb = HeapRb::<f32>::new(lb_rb_capacity);
     let (loopback_producer, loopback_consumer) = loopback_rb.split();
 
     // Mic capture thread
     let running_mic = running.clone();
     let app_mic = app.clone();
     let mic_producer = Arc::new(Mutex::new(mic_producer));
+    let mic_name_for_thread = mic_device_name.clone();
     let mic_thread = Some(std::thread::spawn(move || {
-        run_mic_capture_thread(mic_producer, running_mic, app_mic);
+        run_mic_capture_thread(mic_producer, running_mic, app_mic, mic_name_for_thread);
     }));
 
     // Loopback capture thread
@@ -1043,9 +413,21 @@ fn run_mic_capture_thread(
     producer: SharedProducer,
     running: Arc<AtomicBool>,
     app: AppHandle,
+    mic_device_name: Option<String>,
 ) {
     let host = cpal::default_host();
-    let device = match host.default_input_device() {
+    let device = if let Some(ref name) = mic_device_name {
+        match host.input_devices() {
+            Ok(devices) => devices
+                .into_iter()
+                .find(|d| d.name().ok().as_deref() == Some(name.as_str()))
+                .or_else(|| host.default_input_device()),
+            Err(_) => host.default_input_device(),
+        }
+    } else {
+        host.default_input_device()
+    };
+    let device = match device {
         Some(d) => d,
         None => {
             let _ = app.emit(
@@ -1085,6 +467,11 @@ fn run_mic_capture_thread(
     let running_cb = running.clone();
     let app_err = app.clone();
 
+    // Heartbeat: tracks when the mic callback last fired (epoch millis)
+    let mic_heartbeat = Arc::new(AtomicU64::new(0));
+    let heartbeat_f32 = mic_heartbeat.clone();
+    let heartbeat_i16 = mic_heartbeat.clone();
+
     let err_fn = move |err: cpal::StreamError| {
         log::error!("Mic stream error: {}", err);
         let _ = app_err.emit(
@@ -1102,12 +489,21 @@ fn run_mic_capture_thread(
                 if !running_cb.load(Ordering::Relaxed) {
                     return;
                 }
+                // Update heartbeat
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                heartbeat_f32.store(now, Ordering::Relaxed);
+
                 let mut mono_samples: Vec<f32> = Vec::with_capacity(data.len() / num_channels);
                 for frame in data.chunks(num_channels) {
                     mono_samples.push(frame.iter().sum::<f32>() / num_channels as f32);
                 }
                 if let Ok(mut prod) = producer.lock() {
                     prod.push_slice(&mono_samples);
+                } else {
+                    log::warn!("Mic producer lock failed, dropping {} samples", mono_samples.len());
                 }
             },
             err_fn,
@@ -1119,6 +515,13 @@ fn run_mic_capture_thread(
                 if !running_cb.load(Ordering::Relaxed) {
                     return;
                 }
+                // Update heartbeat
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                heartbeat_i16.store(now, Ordering::Relaxed);
+
                 let mut mono_samples: Vec<f32> = Vec::with_capacity(data.len() / num_channels);
                 for frame in data.chunks(num_channels) {
                     let m: f32 = frame.iter().map(|&s| s as f32 / 32768.0).sum::<f32>()
@@ -1127,6 +530,8 @@ fn run_mic_capture_thread(
                 }
                 if let Ok(mut prod) = producer.lock() {
                     prod.push_slice(&mono_samples);
+                } else {
+                    log::warn!("Mic producer lock failed, dropping {} samples", mono_samples.len());
                 }
             },
             err_fn,
@@ -1168,8 +573,39 @@ fn run_mic_capture_thread(
 
     log::info!("Mic capture started successfully on '{}'", mic_name);
 
+    let mut heartbeat_warned = false;
     while running.load(Ordering::Relaxed) {
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // Check if mic callback is still firing
+        let last_ts = mic_heartbeat.load(Ordering::Relaxed);
+        if last_ts > 0 {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            let age_ms = now.saturating_sub(last_ts);
+            if age_ms > 2000 {
+                if !heartbeat_warned {
+                    log::warn!(
+                        "MIC HEARTBEAT: Callback hasn't fired for {}ms — stream may be dead!",
+                        age_ms
+                    );
+                    let _ = app.emit(
+                        "recording-warning",
+                        RecordingWarning {
+                            message: format!(
+                                "Mikrofonen verkar ha slutat leverera ljud ({}s utan data)",
+                                age_ms / 1000
+                            ),
+                        },
+                    );
+                    heartbeat_warned = true;
+                }
+            } else {
+                heartbeat_warned = false;
+            }
+        }
     }
 
     log::info!("Mic capture thread ending");
@@ -1288,94 +724,163 @@ fn run_mixer_thread(
     mic_sample_rate: u32,
     loopback_sample_rate: u32,
 ) {
-    // Read chunk size: 20ms worth of mic samples
+    // Output chunk size: 20ms worth of mic-rate samples
     let chunk_size = (mic_sample_rate as usize) / 50;
-    let mut mic_buf = vec![0.0f32; chunk_size];
-    let mut lb_buf_raw = vec![0.0f32; chunk_size * 2]; // oversized for different rates
-
     let needs_resample = mic_sample_rate != loopback_sample_rate;
-    let lb_chunk_size = if needs_resample {
-        ((chunk_size as f64) * (loopback_sample_rate as f64) / (mic_sample_rate as f64)).ceil()
-            as usize
-    } else {
-        chunk_size
-    };
+
+    // Accumulator buffers — hold leftover samples between cycles so nothing is lost.
+    // The old code popped from the ring buffer and discarded excess, losing loopback audio.
+    let mut mic_accum: Vec<f32> = Vec::new();
+    let mut lb_accum: Vec<f32> = Vec::new();
+
+    // Mic watchdog: track how long mic_accum has been empty
+    let mut mic_dry_since: Option<std::time::Instant> = None;
+    let mut mic_dry_warned = false;
 
     while running.load(Ordering::Relaxed) {
-        // Read available mic samples
-        let mic_read = if let Ok(mut cons) = mic_consumer.lock() {
-            let available = cons.occupied_len();
-            let to_read = available.min(chunk_size);
-            if to_read > 0 {
-                cons.pop_slice(&mut mic_buf[..to_read]);
-                to_read
-            } else {
-                0
+        // 1. Drain all available from ring buffers into accumulators
+        if let Ok(mut cons) = mic_consumer.lock() {
+            let avail = cons.occupied_len();
+            if avail > 0 {
+                let start = mic_accum.len();
+                mic_accum.resize(start + avail, 0.0);
+                cons.pop_slice(&mut mic_accum[start..]);
             }
-        } else {
-            0
-        };
+        }
+        if let Ok(mut cons) = loopback_consumer.lock() {
+            let avail = cons.occupied_len();
+            if avail > 0 {
+                let start = lb_accum.len();
+                lb_accum.resize(start + avail, 0.0);
+                cons.pop_slice(&mut lb_accum[start..]);
+            }
+        }
 
-        // Read available loopback samples
-        let lb_read = if let Ok(mut cons) = loopback_consumer.lock() {
-            let available = cons.occupied_len();
-            let to_read = available.min(lb_chunk_size);
-            if to_read > 0 {
-                if lb_buf_raw.len() < to_read {
-                    lb_buf_raw.resize(to_read, 0.0);
+        // Mic watchdog: detect if mic stream has stopped delivering data
+        if mic_accum.is_empty() {
+            if mic_dry_since.is_none() {
+                mic_dry_since = Some(std::time::Instant::now());
+            }
+            if let Some(since) = mic_dry_since {
+                let dry_secs = since.elapsed().as_secs();
+                if dry_secs >= 2 && !mic_dry_warned {
+                    log::warn!(
+                        "MIC WATCHDOG: No mic data for {}s — callback may have stopped!",
+                        dry_secs
+                    );
+                    mic_dry_warned = true;
+                } else if dry_secs >= 5 && dry_secs % 5 == 0 {
+                    log::warn!("MIC WATCHDOG: Still no mic data after {}s", dry_secs);
                 }
-                cons.pop_slice(&mut lb_buf_raw[..to_read]);
-                to_read
-            } else {
-                0
             }
         } else {
-            0
-        };
+            if mic_dry_warned {
+                log::info!("MIC WATCHDOG: Mic data resumed after dry period");
+            }
+            mic_dry_since = None;
+            mic_dry_warned = false;
+        }
 
-        // If no data from either source, sleep briefly and retry
-        if mic_read == 0 && lb_read == 0 {
+        // Nothing from either source → sleep briefly
+        if mic_accum.is_empty() && lb_accum.is_empty() {
             std::thread::sleep(std::time::Duration::from_millis(5));
             continue;
         }
 
-        // When paused: ringbuffers are drained above but we skip WAV writing
+        // When paused: drain accumulators to prevent buildup, skip WAV writing
         if paused.load(Ordering::Relaxed) {
+            mic_accum.clear();
+            lb_accum.clear();
             audio_level.store(0u32, Ordering::Relaxed);
+            std::thread::sleep(std::time::Duration::from_millis(20));
             continue;
         }
 
-        // Determine output length (based on mic data, or loopback if no mic)
-        let output_len = if mic_read > 0 { mic_read } else { lb_read };
-
-        // Resample loopback to match mic sample rate if needed
-        let lb_resampled = if lb_read > 0 {
-            if needs_resample {
-                resample_linear(&lb_buf_raw[..lb_read], output_len)
-            } else {
-                let mut v = vec![0.0f32; output_len];
-                let copy_len = lb_read.min(output_len);
-                v[..copy_len].copy_from_slice(&lb_buf_raw[..copy_len]);
-                v
-            }
+        // 2. Mic is timing master — output_len is based on available mic data
+        let output_len = if !mic_accum.is_empty() {
+            mic_accum.len().min(chunk_size)
         } else {
-            vec![0.0f32; output_len]
+            // No mic data yet but loopback has data — wait briefly for mic
+            // to avoid writing loopback-only frames that misalign the streams
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            // If mic still empty after wait, use lb to avoid stalling
+            if mic_accum.is_empty() {
+                let lb_as_output = if needs_resample {
+                    ((lb_accum.len() as f64) * (mic_sample_rate as f64)
+                        / (loopback_sample_rate as f64))
+                        .floor() as usize
+                } else {
+                    lb_accum.len()
+                };
+                lb_as_output.min(chunk_size)
+            } else {
+                mic_accum.len().min(chunk_size)
+            }
         };
 
-        // Write interleaved stereo: left=mic, right=system
+        if output_len == 0 {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            continue;
+        }
+
+        // 3. Consume mic samples
+        let mic_consume = output_len.min(mic_accum.len());
+        let mic_data: Vec<f32> = mic_accum.drain(..mic_consume).collect();
+
+        // 4. Consume proportional loopback samples and resample to output rate
+        let lb_needed = if needs_resample {
+            ((output_len as f64) * (loopback_sample_rate as f64) / (mic_sample_rate as f64))
+                .ceil() as usize
+        } else {
+            output_len
+        };
+        let lb_consume = lb_needed.min(lb_accum.len());
+        let lb_raw: Vec<f32> = lb_accum.drain(..lb_consume).collect();
+
+        let lb_resampled = if lb_raw.is_empty() {
+            vec![0.0f32; output_len]
+        } else if needs_resample {
+            resample_linear(&lb_raw, output_len)
+        } else if lb_raw.len() != output_len {
+            resample_linear(&lb_raw, output_len)
+        } else {
+            lb_raw
+        };
+
+        // 5. Prevent accumulator drift — cap at 1 second max
+        let max_mic = mic_sample_rate as usize;
+        let max_lb = loopback_sample_rate as usize;
+        if mic_accum.len() > max_mic {
+            let excess = mic_accum.len() - max_mic;
+            mic_accum.drain(..excess);
+            log::warn!("Mic accumulator overflow, dropped {} samples", excess);
+        }
+        if lb_accum.len() > max_lb {
+            let excess = lb_accum.len() - max_lb;
+            lb_accum.drain(..excess);
+            log::warn!("Loopback accumulator overflow, dropped {} samples", excess);
+        }
+
+        // 6. Write interleaved stereo: left=mic, right=system
         let mut sum_sq = 0.0f32;
         if let Ok(mut guard) = writer.lock() {
             if let Some(ref mut w) = *guard {
                 for i in 0..output_len {
-                    let mic_s = if i < mic_read { mic_buf[i] } else { 0.0 };
-                    let lb_s = lb_resampled[i];
+                    let mic_s = if i < mic_data.len() { mic_data[i] } else { 0.0 };
+                    let lb_s = if i < lb_resampled.len() {
+                        lb_resampled[i]
+                    } else {
+                        0.0
+                    };
 
                     // Left channel: mic
                     let left = (mic_s.clamp(-1.0, 1.0) * i16::MAX as f32)
-                        .clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+                        .clamp(i16::MIN as f32, i16::MAX as f32)
+                        as i16;
                     // Right channel: system
                     let right = (lb_s.clamp(-1.0, 1.0) * i16::MAX as f32)
-                        .clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+                        .clamp(i16::MIN as f32, i16::MAX as f32)
+                        as i16;
 
                     if w.write_sample(left).is_err() {
                         break;
