@@ -16,7 +16,7 @@ pip install -e .
 pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
 
 # Run all unit tests (no models needed)
-pytest tests/ -k "not Integration" -v
+pytest tests/ -m "not integration" -v
 
 # Run a single test file or class
 pytest tests/test_formatter.py -v

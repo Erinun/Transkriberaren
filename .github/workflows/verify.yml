@@ -31,7 +31,7 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Run pytest (non-integration)
-        run: pytest tests/ -k "not Integration" -v
+        run: pytest tests/ -m "not integration" -v
 
   rust-check-windows:
     runs-on: windows-latest
