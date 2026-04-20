@@ -1,0 +1,73 @@
+name: Verify
+
+# Lättvikts-CI: kör pytest + cargo check/build på Windows utan att skapa en
+# release. Används för att verifiera att Rust-koden kompilerar och att
+# Python-testerna (inklusive IPC-smoketesterna i test_server_ipc.py) går
+# igenom innan en riktig build skapas lokalt eller via release.yml.
+
+on:
+  push:
+    branches:
+      - "claude/**"
+      - "fix/**"
+      - "feat/**"
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  python-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
+          pip install -e ".[dev]"
+
+      - name: Run pytest (non-integration)
+        run: pytest tests/ -k "not Integration" -v
+
+  rust-check-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      # tauri-build kräver en existerande frontendDist (../app/dist). Vi
+      # behöver inte köra hela Tauri-builden för att typkontrollera Rust-
+      # koden, men `cargo check` anropar build.rs som i sin tur läser
+      # frontendDist. Kör en minimal vite-build först.
+      - name: Install frontend deps
+        working-directory: app
+        run: npm install
+
+      - name: Build frontend
+        working-directory: app
+        run: npm run build
+
+      - name: cargo check
+        working-directory: src-tauri
+        run: cargo check --all-targets
+
+      - name: cargo clippy (warnings only)
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+        continue-on-error: true

@@ -31,3 +31,6 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: tester som kräver modeller eller är långsamma/tunga",
+]
