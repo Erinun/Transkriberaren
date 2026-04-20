@@ -56,6 +56,7 @@ impl MeetingDetector {
         self.monitoring.store(false, Ordering::SeqCst);
     }
 
+    #[allow(dead_code)]
     pub fn is_monitoring(&self) -> bool {
         self.monitoring.load(Ordering::SeqCst)
     }

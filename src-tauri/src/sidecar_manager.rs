@@ -283,7 +283,7 @@ impl SidecarManager {
                         // If the process is alive we keep retrying indefinitely —
                         // a long transcription may produce transient pipe errors
                         // on Windows that should not abort the whole run.
-                        let alive = child_pid.map(|pid| is_process_alive(pid)).unwrap_or(false);
+                        let alive = child_pid.map(is_process_alive).unwrap_or(false);
 
                         if !alive {
                             log::error!(
@@ -350,7 +350,7 @@ impl SidecarManager {
     }
 
     /// Send a JSON command and wait for the "end" sentinel.
-    async fn send_command(&self, cmd: Value, app: &AppHandle) -> Result<Vec<Value>, String> {
+    async fn send_command(&self, cmd: Value, app: &AppHandle, timeout_secs: u64) -> Result<Vec<Value>, String> {
         self.ensure_running(app).await?;
 
         let req_id = cmd
@@ -403,12 +403,12 @@ impl SidecarManager {
             }
         }
 
-        // Wait for "end" sentinel, process death, or timeout (8h for long transcriptions)
+        // Wait for "end" sentinel, process death, or timeout
         let process_died = {
             let dc = disconnected.clone();
             let d = done.clone();
             tokio::time::timeout(
-                std::time::Duration::from_secs(28800),
+                std::time::Duration::from_secs(timeout_secs),
                 async {
                     tokio::select! {
                         _ = d.notified() => false,
@@ -429,7 +429,8 @@ impl SidecarManager {
 
         match process_died {
             Err(_) => {
-                return Err("Timeout: sidecar svarade inte inom 8 timmar".to_string());
+                let mins = timeout_secs / 60;
+                return Err(format!("Timeout: sidecar svarade inte inom {} minuter", mins));
             }
             Ok(true) => {
                 // Process died — check if we got error events before dying
@@ -495,7 +496,7 @@ impl SidecarManager {
             }
         });
 
-        self.send_command(cmd, app).await?;
+        self.send_command(cmd, app, 3600).await?; // 1 hour for transcription
         Ok(())
     }
 
@@ -512,7 +513,7 @@ impl SidecarManager {
             }
         });
 
-        let events = self.send_command(cmd, app).await?;
+        let events = self.send_command(cmd, app, 180).await?; // 3 min for warmup
 
         let diarization_available = events.iter().any(|ev| {
             ev.get("diarization_available")

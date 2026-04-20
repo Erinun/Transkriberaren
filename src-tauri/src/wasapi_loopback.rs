@@ -42,6 +42,7 @@ impl Drop for ComGuard {
 }
 
 /// Result of active device detection.
+#[allow(dead_code)]
 #[derive(Clone, serde::Serialize)]
 pub struct ActiveOutputDevice {
     pub name: String,
@@ -167,6 +168,7 @@ impl WasapiLoopbackCapture {
         }
     }
 
+    #[allow(dead_code)]
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
@@ -433,6 +435,7 @@ pub fn get_output_device_sample_rate(device_name: Option<&str>) -> Result<u32, S
 }
 
 /// Detect which output devices are currently playing audio.
+#[allow(dead_code)]
 pub fn detect_active_output_devices() -> Result<Vec<ActiveOutputDevice>, String> {
     let _com = ComGuard::new();
     unsafe {

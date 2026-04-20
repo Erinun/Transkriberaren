@@ -714,6 +714,7 @@ fn run_loopback_capture_thread(
 
 // ─── Mixer thread ────────────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 fn run_mixer_thread(
     mic_consumer: SharedConsumer,
     loopback_consumer: SharedConsumer,
@@ -839,9 +840,7 @@ fn run_mixer_thread(
 
         let lb_resampled = if lb_raw.is_empty() {
             vec![0.0f32; output_len]
-        } else if needs_resample {
-            resample_linear(&lb_raw, output_len)
-        } else if lb_raw.len() != output_len {
+        } else if needs_resample || lb_raw.len() != output_len {
             resample_linear(&lb_raw, output_len)
         } else {
             lb_raw

@@ -133,13 +133,11 @@ pub fn run() {
                     label,
                     event: tauri::WindowEvent::CloseRequested { api, .. },
                     ..
-                } => {
-                    if label == "main" {
-                        // Hide window instead of closing — app lives in tray
-                        api.prevent_close();
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.hide();
-                        }
+                } if label == "main" => {
+                    // Hide window instead of closing — app lives in tray
+                    api.prevent_close();
+                    if let Some(w) = app.get_webview_window("main") {
+                        let _ = w.hide();
                     }
                 }
                 tauri::RunEvent::Exit => {
