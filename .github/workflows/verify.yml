@@ -63,6 +63,15 @@ jobs:
         working-directory: app
         run: npm run build
 
+      # sidecar/ innehåller bundlad Python + modeller och skapas bara lokalt.
+      # Tauri's build.rs kräver att glob-mönstret "sidecar/**/*" matchar minst
+      # en fil, så vi skapar en dummy för att cargo check ska gå igenom.
+      - name: Create sidecar stub for cargo check
+        working-directory: src-tauri
+        run: |
+          mkdir -p sidecar
+          echo "stub" > sidecar/.gitkeep
+
       - name: cargo check
         working-directory: src-tauri
         run: cargo check --all-targets
