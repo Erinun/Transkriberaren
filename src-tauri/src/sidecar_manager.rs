@@ -324,7 +324,7 @@ impl SidecarManager {
         // Wait for the "ready" message with proper detection of process death
         let dc_clone = disconnected.clone();
         let ready_result = tokio::time::timeout(
-            std::time::Duration::from_secs(30),
+            std::time::Duration::from_secs(60),
             async {
                 tokio::select! {
                     _ = ready_signal.notified() => Ok(()),
@@ -336,7 +336,7 @@ impl SidecarManager {
 
         match ready_result {
             Err(_) => {
-                return Err("Timeout (30s): Python-sidecar skickade aldrig 'ready'".to_string());
+                return Err("Timeout (60s): Python-sidecar skickade aldrig 'ready'".to_string());
             }
             Ok(Err(e)) => {
                 return Err(e);
@@ -496,7 +496,7 @@ impl SidecarManager {
             }
         });
 
-        self.send_command(cmd, app, 3600).await?; // 1 hour for transcription
+        self.send_command(cmd, app, 21600).await?; // 6 hours for long transcriptions
         Ok(())
     }
 

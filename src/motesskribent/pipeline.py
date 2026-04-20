@@ -227,8 +227,10 @@ def run_pipeline(
             heartbeat_thread.join(timeout=1.0)
         return time.perf_counter() - t
 
-    # Throttled transcription progress: emit max once per percentage point
+    # Throttled transcription progress: emit max once per percentage point,
+    # but always emit at least every 10 seconds to keep heartbeat alive for long files.
     _last_pct = [-1]  # mutable container for closure
+    _last_progress_time = [time.perf_counter()]
     diarization_done = [False]
     _last_raw_fraction = [0.0]
     _fraction_at_diar_done = [0.0]
@@ -242,8 +244,11 @@ def run_pipeline(
             fraction, diarization_done[0], _fraction_at_diar_done[0],
         )
         pct = int(mapped * 100)
-        if pct > _last_pct[0]:
+        now = time.perf_counter()
+        time_since_last = now - _last_progress_time[0]
+        if pct > _last_pct[0] or time_since_last >= 10.0:
             _last_pct[0] = pct
+            _last_progress_time[0] = now
             estimated_total = max(int(audio_duration / 4), 1)
             _progress("transcription", mapped, f"segment {segment_index}/~{estimated_total}")
 

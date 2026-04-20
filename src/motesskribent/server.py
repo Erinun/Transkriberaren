@@ -6,7 +6,7 @@ import json
 import logging
 import sys
 import threading
-from concurrent.futures import ThreadPoolExecutor, wait
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_EXCEPTION
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -53,11 +53,31 @@ def _handle_warmup(request_id: str, config: dict) -> None:
         from motesskribent.diarization.diarizer import _warmup_models
         _warmup_models()
 
+    warmup_timeout = 180  # seconds — max time to load models
+
     with ThreadPoolExecutor(max_workers=2) as pool:
         futures = [pool.submit(load_transcriber)]
         if need_diarizer:
             futures.append(pool.submit(load_diarizer))
-        wait(futures)
+        done, not_done = wait(futures, timeout=warmup_timeout)
+
+        if not_done:
+            names = []
+            if futures[0] in not_done:
+                names.append("transkribering")
+            if len(futures) > 1 and futures[1] in not_done:
+                names.append("talaridentifiering")
+            _emit({
+                "request_id": request_id,
+                "type": "error",
+                "message": (
+                    f"Modellerna för {', '.join(names)} kunde inte laddas inom "
+                    f"{warmup_timeout} sekunder. Kontrollera att modellerna finns "
+                    f"tillgängliga och försök igen."
+                ),
+                "stage": "warmup",
+            })
+            return
 
         # Check for errors — transcriber is required, diarizer is optional
         transcriber_future = futures[0]

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
@@ -74,8 +74,35 @@ const INITIAL_STATE: PipelineState = {
   eventLog: [],
 };
 
+const HEARTBEAT_TIMEOUT_MS = 60_000; // 60 seconds without any event = stale (supports long files)
+const HEARTBEAT_CHECK_INTERVAL_MS = 15_000; // check every 15 seconds
+
 export function usePipeline() {
   const [state, setState] = useState<PipelineState>(INITIAL_STATE);
+  const lastEventTimeRef = useRef(0);
+
+  // Heartbeat watchdog: detect stale pipeline (no events for 30s)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const lastEvent = lastEventTimeRef.current;
+      if (lastEvent === 0) return; // not running
+
+      setState((s) => {
+        if (s.status !== "running") return s;
+        const elapsed = Date.now() - lastEvent;
+        if (elapsed > HEARTBEAT_TIMEOUT_MS) {
+          return {
+            ...s,
+            status: "error",
+            error: "Transkriberingen svarar inte. Försök igen eller starta om appen.",
+          };
+        }
+        return s;
+      });
+    }, HEARTBEAT_CHECK_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     let unlisten: UnlistenFn | null = null;
@@ -88,6 +115,7 @@ export function usePipeline() {
       if (data.type === "progress") {
         setState((s) => {
           const now = Date.now();
+          lastEventTimeRef.current = now;
           const logEntry: EventLogEntry = { time: now, message: data.message };
           const newLog = [...s.eventLog.slice(-4), logEntry];
 
@@ -117,6 +145,7 @@ export function usePipeline() {
           };
         });
       } else if (data.type === "result") {
+        lastEventTimeRef.current = 0; // stop watchdog
         setState((s) => ({
           ...s,
           status: "done",
@@ -130,6 +159,7 @@ export function usePipeline() {
           wordCount: data.word_count ?? 0,
         }));
       } else if (data.type === "error") {
+        lastEventTimeRef.current = 0; // stop watchdog
         setState((s) => {
           // Don't overwrite the first (real) error with subsequent generic ones
           if (s.status === "error") return s;
@@ -149,7 +179,9 @@ export function usePipeline() {
 
   const start = useCallback(
     async (audioPath: string, settings: PipelineSettings) => {
-      setState({ ...INITIAL_STATE, status: "running", message: "Startar...", startTime: Date.now(), lastEventTime: Date.now() });
+      const now = Date.now();
+      lastEventTimeRef.current = now;
+      setState({ ...INITIAL_STATE, status: "running", message: "Startar...", startTime: now, lastEventTime: now });
 
       try {
         await invoke("run_transcription", {
@@ -181,6 +213,7 @@ export function usePipeline() {
   );
 
   const reset = useCallback(() => {
+    lastEventTimeRef.current = 0;
     setState(INITIAL_STATE);
   }, []);
 
