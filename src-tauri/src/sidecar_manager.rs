@@ -184,8 +184,38 @@ impl SidecarManager {
             .take()
             .ok_or("Kunde inte öppna stdout för sidecar")?;
 
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or("Kunde inte öppna stderr för sidecar")?;
+
         let disconnected = Arc::new(Notify::new());
         let ready_signal = Arc::new(Notify::new());
+
+        // Drain stderr continuously — otherwise Python blocks on write once the
+        // pipe buffer fills (~64KB on Windows), which on long transcriptions
+        // causes the whole pipeline to freeze and eventually get killed.
+        // We forward each line to the Rust log at debug level.
+        tokio::spawn(async move {
+            let mut reader = BufReader::new(stderr);
+            loop {
+                let mut buf = Vec::new();
+                match reader.read_until(b'\n', &mut buf).await {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        let line = String::from_utf8_lossy(&buf);
+                        let trimmed = line.trim_end();
+                        if !trimmed.is_empty() {
+                            log::debug!("[sidecar stderr] {}", trimmed);
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Sidecar stderr read error: {}", e);
+                        break;
+                    }
+                }
+            }
+        });
 
         // Spawn background reader that routes events by request_id
         let pending = self.pending.clone();
@@ -249,13 +279,27 @@ impl SidecarManager {
                         consecutive_errors += 1;
                         log::warn!("Sidecar stdout read error #{}: {}", consecutive_errors, e);
 
-                        // Check if the process is actually dead before giving up
+                        // Check if the process is actually dead before giving up.
+                        // If the process is alive we keep retrying indefinitely —
+                        // a long transcription may produce transient pipe errors
+                        // on Windows that should not abort the whole run.
                         let alive = child_pid.map(|pid| is_process_alive(pid)).unwrap_or(false);
 
-                        if !alive || consecutive_errors >= 3 {
+                        if !alive {
                             log::error!(
-                                "Sidecar read giving up (process alive={}, errors={})",
-                                alive, consecutive_errors
+                                "Sidecar read giving up (process dead, errors={})",
+                                consecutive_errors
+                            );
+                            break;
+                        }
+
+                        // Safety valve: if we hit an unreasonable number of errors
+                        // in a row while the process is still alive, something is
+                        // very wrong — bail out rather than spinning forever.
+                        if consecutive_errors >= 100 {
+                            log::error!(
+                                "Sidecar read giving up (process alive but {} consecutive errors)",
+                                consecutive_errors
                             );
                             break;
                         }
