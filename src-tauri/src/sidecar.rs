@@ -172,3 +172,96 @@ pub async fn run_python_pipeline(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Test att PipelineEvent::Progress kan deserialiseras från JSON
+    /// med extra `request_id`-fält (som server.py skickar).
+    #[test]
+    fn test_progress_with_request_id() {
+        let json = serde_json::json!({
+            "request_id": "abc-123",
+            "type": "progress",
+            "stage": "transcription",
+            "percent": 45,
+            "message": "Transkriberar (segment 10/~50)"
+        });
+
+        let result = serde_json::from_value::<PipelineEvent>(json);
+        assert!(result.is_ok(), "Deserialisering misslyckades: {:?}", result.err());
+    }
+
+    /// Test att heartbeat-events deserialiseras korrekt.
+    #[test]
+    fn test_heartbeat_with_request_id() {
+        let json = serde_json::json!({
+            "request_id": "abc-123",
+            "type": "progress",
+            "stage": "heartbeat",
+            "percent": -1,
+            "message": "Pipeline aktiv"
+        });
+
+        let result = serde_json::from_value::<PipelineEvent>(json);
+        assert!(result.is_ok(), "Heartbeat deserialisering misslyckades: {:?}", result.err());
+    }
+
+    /// Test progress UTAN request_id (one-shot mode via cli.py).
+    #[test]
+    fn test_progress_without_request_id() {
+        let json = serde_json::json!({
+            "type": "progress",
+            "stage": "preprocessing",
+            "percent": 5,
+            "message": "Förbehandlar ljud"
+        });
+
+        let result = serde_json::from_value::<PipelineEvent>(json);
+        assert!(result.is_ok(), "Deserialisering utan request_id misslyckades: {:?}", result.err());
+    }
+
+    /// Test result-event med request_id och alla fält.
+    #[test]
+    fn test_result_with_request_id() {
+        let json = serde_json::json!({
+            "request_id": "abc-123",
+            "type": "result",
+            "success": true,
+            "output_files": ["/path/to/file.md"],
+            "summary": {"total_duration": 120.0, "speech_duration": 100.0, "processing_time": 60.0, "num_speakers": 2, "num_segments": 10},
+            "md_content": "# Möte",
+            "warnings": [],
+            "model_name": "KBLab/kb-whisper-base",
+            "segments": [{"start": 0.0, "end": 5.0, "speaker_id": "s1", "speaker_label": "Talare 1", "text": "Hej"}],
+            "word_count": 50
+        });
+
+        let result = serde_json::from_value::<PipelineEvent>(json);
+        assert!(result.is_ok(), "Result deserialisering misslyckades: {:?}", result.err());
+    }
+
+    /// Test error-event med request_id.
+    #[test]
+    fn test_error_with_request_id() {
+        let json = serde_json::json!({
+            "request_id": "abc-123",
+            "type": "error",
+            "message": "Modellen hittades inte",
+            "stage": "transcription"
+        });
+
+        let result = serde_json::from_value::<PipelineEvent>(json);
+        assert!(result.is_ok(), "Error deserialisering misslyckades: {:?}", result.err());
+    }
+
+    /// Test from_str (som one-shot sidecar.rs använder) vs from_value (som sidecar_manager.rs använder).
+    #[test]
+    fn test_from_str_with_request_id() {
+        let json_str = r#"{"request_id":"abc-123","type":"progress","stage":"heartbeat","percent":-1,"message":"Pipeline aktiv"}"#;
+
+        let result = serde_json::from_str::<PipelineEvent>(json_str);
+        assert!(result.is_ok(), "from_str misslyckades: {:?}", result.err());
+    }
+}

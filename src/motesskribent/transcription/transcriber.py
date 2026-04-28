@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -18,6 +19,15 @@ from typing import Callable
 from faster_whisper import BatchedInferencePipeline, WhisperModel
 
 logger = logging.getLogger(__name__)
+
+_JUNK_PATTERN = re.compile(r'[-]{2,}|[|]+|[_]{2,}|[*]{2,}|[~]{2,}')
+
+
+def clean_transcription_text(text: str) -> str:
+    """Ta bort skräptecken (streck, pipes, etc.) som Whisper ibland producerar."""
+    text = _JUNK_PATTERN.sub('', text)
+    text = re.sub(r' {2,}', ' ', text)
+    return text.strip()
 
 
 class ModelResolutionError(Exception):
@@ -410,7 +420,7 @@ def transcribe(
                 ))
 
         segments.append(TranscribedSegment(
-            text=seg.text.strip(),
+            text=clean_transcription_text(seg.text),
             start=seg.start,
             end=seg.end,
             words=words,

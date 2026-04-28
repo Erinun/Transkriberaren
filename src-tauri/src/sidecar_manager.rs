@@ -261,8 +261,18 @@ impl SidecarManager {
 
                         // Emit pipeline-event for progress/result/error (so frontend gets updates)
                         if msg_type == "progress" || msg_type == "result" || msg_type == "error" {
-                            if let Ok(event) = serde_json::from_value::<PipelineEvent>(parsed.clone()) {
-                                let _ = app_clone.emit("pipeline-event", &event);
+                            match serde_json::from_value::<PipelineEvent>(parsed.clone()) {
+                                Ok(event) => {
+                                    log::trace!("Pipeline-event emitted: {:?}", event);
+                                    let _ = app_clone.emit("pipeline-event", &event);
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "Pipeline-event deserialisering misslyckades: {} — raw: {}",
+                                        e,
+                                        parsed
+                                    );
+                                }
                             }
                         }
 

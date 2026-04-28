@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-from motesskribent.transcription.transcriber import TranscribedSegment
+from motesskribent.transcription.transcriber import TranscribedSegment, clean_transcription_text  # noqa: F401
 
 
 def format_timestamp(seconds: float) -> str:

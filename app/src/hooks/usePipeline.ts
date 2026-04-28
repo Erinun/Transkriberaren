@@ -81,7 +81,11 @@ export function usePipeline() {
   const [state, setState] = useState<PipelineState>(INITIAL_STATE);
   const lastEventTimeRef = useRef(0);
 
-  // Heartbeat watchdog: detect stale pipeline (no events for 30s)
+  // Heartbeat watchdog: log stale pipeline (no events for 60s)
+  // NOTE: Does NOT set status to "error" — ProcessingView already shows a
+  // stale-warning banner when sinceLast > 60. Setting "error" caused the view
+  // to navigate away while the Python pipeline was still running, making it
+  // look like the transcription failed even though it completed later.
   useEffect(() => {
     const interval = setInterval(() => {
       const lastEvent = lastEventTimeRef.current;
@@ -91,11 +95,13 @@ export function usePipeline() {
         if (s.status !== "running") return s;
         const elapsed = Date.now() - lastEvent;
         if (elapsed > HEARTBEAT_TIMEOUT_MS) {
-          return {
-            ...s,
-            status: "error",
-            error: "Transkriberingen svarar inte. Försök igen eller starta om appen.",
-          };
+          console.warn("[usePipeline] WATCHDOG: stale pipeline", {
+            elapsed,
+            lastEvent,
+            now: Date.now(),
+            currentStage: s.stage,
+            currentPercent: s.percent,
+          });
         }
         return s;
       });
@@ -159,6 +165,7 @@ export function usePipeline() {
           wordCount: data.word_count ?? 0,
         }));
       } else if (data.type === "error") {
+        console.warn("[usePipeline] ERROR EVENT received", { data });
         lastEventTimeRef.current = 0; // stop watchdog
         setState((s) => {
           // Don't overwrite the first (real) error with subsequent generic ones
@@ -198,6 +205,7 @@ export function usePipeline() {
           },
         });
       } catch (err: any) {
+        console.warn("[usePipeline] START CATCH", { err });
         setState((s) => {
           // Don't overwrite if we already have a real error from pipeline-event
           if (s.status === "error") return s;

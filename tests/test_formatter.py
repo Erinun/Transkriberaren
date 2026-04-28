@@ -3,6 +3,7 @@
 import json
 
 from motesskribent.output.formatter import (
+    clean_transcription_text,
     format_timestamp,
     merge_short_segments,
     to_json,
@@ -173,3 +174,40 @@ class TestToJson:
         result = to_json(segs, {})
         # Swedish characters should appear directly, not as \u escapes
         assert "Ärende" in result
+
+
+class TestCleanTranscriptionText:
+    """Enhetstester för clean_transcription_text."""
+
+    def test_removes_repeated_dashes(self):
+        assert clean_transcription_text("Hej ---- världen") == "Hej världen"
+
+    def test_removes_pipes(self):
+        assert clean_transcription_text("Hej | världen ||") == "Hej världen"
+
+    def test_removes_repeated_underscores(self):
+        assert clean_transcription_text("Hej ___ världen") == "Hej världen"
+
+    def test_removes_repeated_asterisks(self):
+        assert clean_transcription_text("Hej *** världen") == "Hej världen"
+
+    def test_removes_repeated_tildes(self):
+        assert clean_transcription_text("Hej ~~~ världen") == "Hej världen"
+
+    def test_collapses_multiple_spaces(self):
+        assert clean_transcription_text("Hej    världen") == "Hej världen"
+
+    def test_mixed_junk(self):
+        assert clean_transcription_text("  |---Hej***  ~~världen__|  ") == "Hej världen"
+
+    def test_normal_text_unchanged(self):
+        assert clean_transcription_text("Det här är vanlig text.") == "Det här är vanlig text."
+
+    def test_empty_string(self):
+        assert clean_transcription_text("") == ""
+
+    def test_single_dash_preserved(self):
+        assert clean_transcription_text("ord-sammansättning") == "ord-sammansättning"
+
+    def test_single_underscore_preserved(self):
+        assert clean_transcription_text("ett_ord") == "ett_ord"
