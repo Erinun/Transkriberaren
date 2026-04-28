@@ -224,6 +224,7 @@ class TestMergeSimilarSpeakers:
         assert unique[0] == 0  # renumbered to 0
 
 
+@pytest.mark.integration
 @pytest.mark.skipif(
     not TEST_WAV.exists(),
     reason=f"Test-WAV saknas: {TEST_WAV}",

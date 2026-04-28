@@ -60,6 +60,7 @@ class TestDataclasses:
         assert result.audio_duration == 10.0
 
 
+@pytest.mark.integration
 @pytest.mark.skipif(
     not TEST_WAV.exists(),
     reason=f"Test-WAV saknas: {TEST_WAV}",
