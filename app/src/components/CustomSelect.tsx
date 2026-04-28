@@ -55,7 +55,7 @@ export default function CustomSelect({ value, onChange, options, className = "" 
         </svg>
       </button>
       {open && (
-        <div className="absolute z-50 mt-1 w-full rounded-lg glass-elevated overflow-hidden shadow-lg">
+        <div className="absolute z-50 mt-1 w-full rounded-lg bg-[rgba(15,20,35,0.95)] border border-white/15 overflow-hidden shadow-lg backdrop-blur-xl">
           {options.map((opt) => (
             <button
               key={opt.value}
@@ -67,7 +67,7 @@ export default function CustomSelect({ value, onChange, options, className = "" 
               className={`w-full px-3 py-2 text-sm text-left transition-colors ${
                 opt.value === value
                   ? "bg-[var(--color-primary)] text-white"
-                  : "hover:bg-white/10 text-[var(--color-text)]"
+                  : "hover:bg-white/15 text-[var(--color-text)]"
               }`}
             >
               {opt.label}
