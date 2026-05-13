@@ -130,6 +130,10 @@ function AppInner() {
   const toastShownRef = useRef(false);
   // Track whether pipeline was started in this session (robust against view changes during processing)
   const pipelineActiveRef = useRef(false);
+  // TODO: Framtida refaktor — ersätt pipelineActiveRef + ollamaActiveRef med en
+  // gemensam "busyRef" som varje långkörande flöde opt-inar till, istället för
+  // att meeting-detected-lyssnaren måste känna till varje flöde individuellt.
+  const ollamaActiveRef = useRef(false);
 
   // Listen for sidecar status events
   useEffect(() => {
@@ -163,9 +167,9 @@ function AppInner() {
     let cancelled = false;
     listen("meeting-detected", () => {
       if (cancelled) return;
-      console.log("[DIAG] meeting-detected event fired, activeView:", activeView, "pipelineActive:", pipelineActiveRef.current);
-      // Don't navigate away while pipeline is actively running
-      if (pipelineActiveRef.current) return;
+      console.log("[DIAG] meeting-detected event fired, activeView:", activeView, "pipelineActive:", pipelineActiveRef.current, "ollamaActive:", ollamaActiveRef.current);
+      // Don't navigate away while pipeline or Ollama processing is actively running
+      if (pipelineActiveRef.current || ollamaActiveRef.current) return;
       setActiveView("recording");
     }).then((fn) => {
       if (cancelled) fn(); else unlisten = fn;
@@ -395,6 +399,7 @@ function AppInner() {
               {...resultProps}
               ollamaStatus={ollamaStatus}
               onOllamaComplete={handleOllamaComplete}
+              ollamaActiveRef={ollamaActiveRef}
               savedOllamaResults={
                 currentEntryId
                   ? history.entries.find((e) => e.id === currentEntryId)?.ollamaResults

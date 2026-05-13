@@ -37,6 +37,7 @@ interface Props {
   ollamaStatus: OllamaStatus;
   onOllamaComplete?: (result: OllamaResult) => void;
   savedOllamaResults?: OllamaResult[];
+  ollamaActiveRef?: React.MutableRefObject<boolean>;
 }
 
 type ViewMode = "transcription" | "segment";
@@ -124,6 +125,7 @@ export default function ResultView({
   ollamaStatus,
   onOllamaComplete,
   savedOllamaResults,
+  ollamaActiveRef,
 }: Props) {
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -136,6 +138,12 @@ export default function ResultView({
 
   // Ollama state (declared early so useEffects below can reference it)
   const ollama = useOllama(ollamaStatus);
+
+  // Sync ollama generating state to App-level ref for meeting-detected guard
+  useEffect(() => {
+    if (ollamaActiveRef) ollamaActiveRef.current = ollama.generating;
+    return () => { if (ollamaActiveRef) ollamaActiveRef.current = false; };
+  }, [ollama.generating, ollamaActiveRef]);
 
   // Saved ollama result viewing (for history entries)
   const [viewingSavedResult, setViewingSavedResult] = useState<OllamaResult | null>(
