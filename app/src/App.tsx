@@ -163,9 +163,9 @@ function AppInner() {
     let cancelled = false;
     listen("meeting-detected", () => {
       if (cancelled) return;
-      // If pipeline is running, mark it as no longer active so the completion
-      // effect won't force-navigate back to "result"
-      pipelineActiveRef.current = false;
+      console.log("[DIAG] meeting-detected event fired, activeView:", activeView, "pipelineActive:", pipelineActiveRef.current);
+      // Don't navigate away while pipeline is actively running
+      if (pipelineActiveRef.current) return;
       setActiveView("recording");
     }).then((fn) => {
       if (cancelled) fn(); else unlisten = fn;
@@ -210,6 +210,7 @@ function AppInner() {
   // Auto-navigate when pipeline completes or errors, and save to history
   useEffect(() => {
     if ((pipeline.status === "done" || pipeline.status === "error") && pipelineActiveRef.current) {
+      console.log("[DIAG] auto-navigate:", pipeline.status, "pipelineActive:", pipelineActiveRef.current, "activeView:", activeView);
       pipelineActiveRef.current = false;
       setActiveView("result");
     }

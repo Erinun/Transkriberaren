@@ -151,6 +151,7 @@ export function usePipeline() {
           };
         });
       } else if (data.type === "result") {
+        console.log("[DIAG] pipeline result event received");
         lastEventTimeRef.current = 0; // stop watchdog
         setState((s) => ({
           ...s,
@@ -165,6 +166,7 @@ export function usePipeline() {
           wordCount: data.word_count ?? 0,
         }));
       } else if (data.type === "error") {
+        console.log("[DIAG] pipeline error event:", data.message);
         console.warn("[usePipeline] ERROR EVENT received", { data });
         lastEventTimeRef.current = 0; // stop watchdog
         setState((s) => {
@@ -205,6 +207,7 @@ export function usePipeline() {
           },
         });
       } catch (err: any) {
+        console.log("[DIAG] invoke rejected:", err);
         console.warn("[usePipeline] START CATCH", { err });
         setState((s) => {
           // Don't overwrite if we already have a real error from pipeline-event
