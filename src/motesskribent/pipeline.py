@@ -194,6 +194,11 @@ def run_pipeline(
         and config.num_speakers is not None
         and config.num_speakers <= 1
     )
+    # Stereo: mikrofonen är alltid Talare 1. Systemkanalen diariseras för att
+    # skilja fjärrdeltagarna åt, utom när användaren angett högst två talare.
+    diarize_system_channel = use_channel_diarization and (
+        config.num_speakers is None or config.num_speakers >= 3
+    )
     warnings: list[str] = []
     trans_result = None
 
@@ -204,9 +209,25 @@ def run_pipeline(
             logger.info("Hoppar över diarisering (num_speakers=%s)", config.num_speakers)
             num_speakers = max(config.num_speakers, 1)
             return 0.0
-        if use_channel_diarization:
+        if use_channel_diarization and not diarize_system_channel:
             logger.info("Använder kanalbaserad talarseparering (stereo-inspelning)")
             return 0.0
+
+        if use_channel_diarization:
+            logger.info("Stereo-inspelning: diariserar systemkanalen för att skilja fjärrdeltagare åt")
+            diar_audio = preprocessed.channel_audio_paths[1]
+            diar_kwargs = dict(
+                num_speakers=config.num_speakers - 1 if config.num_speakers else None,
+                min_speakers=1,
+                max_speakers=max(config.max_speakers - 1, 1),
+            )
+        else:
+            diar_audio = preprocessed.audio_path
+            diar_kwargs = dict(
+                num_speakers=config.num_speakers,
+                min_speakers=config.min_speakers,
+                max_speakers=config.max_speakers,
+            )
 
         # Heartbeat thread: emit indeterminate progress every 5s during diarization
         heartbeat_stop = threading.Event()
@@ -220,19 +241,19 @@ def run_pipeline(
 
         try:
             from motesskribent.diarization.diarizer import diarize
-            diar_result = diarize(
-                preprocessed.audio_path,
-                num_speakers=config.num_speakers,
-                min_speakers=config.min_speakers,
-                max_speakers=config.max_speakers,
-            )
+            diar_result = diarize(diar_audio, **diar_kwargs)
             diarization_segments = diar_result.segments
             num_speakers = diar_result.num_speakers
         except Exception:
             logger.warning("Diarisering misslyckades, fortsätter utan talare", exc_info=True)
             num_speakers = 1
             diarization_failed = True
-            warnings.append("Talarseparering ej tillgänglig")
+            if use_channel_diarization:
+                warnings.append(
+                    "Talarseparering av fjärrdeltagare ej tillgänglig – alla visas som Talare 2"
+                )
+            else:
+                warnings.append("Talarseparering ej tillgänglig")
         finally:
             heartbeat_stop.set()
             heartbeat_thread.join(timeout=1.0)
@@ -340,7 +361,7 @@ def run_pipeline(
             progress_callback=_on_transcription_progress,
         )
 
-    if skip_diarization or use_channel_diarization:
+    if skip_diarization or (use_channel_diarization and not diarize_system_channel):
         breakdown["diarization"] = _run_diarization()
         _progress("diarization", 0.30)
         diarization_done[0] = True
@@ -353,7 +374,8 @@ def run_pipeline(
             # Diarization typically finishes first — report progress as it completes
             breakdown["diarization"] = diar_future.result()
             _fraction_at_diar_done[0] = _last_raw_fraction[0]
-            _progress("diarization", 0.30)
+            if _last_pct[0] < 30:  # stereo: transkriberingen kan redan ha passerat 30 %
+                _progress("diarization", 0.30)
             diarization_done[0] = True
 
             breakdown["transcription"] = trans_future.result()
@@ -362,8 +384,12 @@ def run_pipeline(
 
     # 4. Matcha talare
     if use_channel_diarization:
-        # Talare redan tilldelade av merge_channel_transcriptions
+        # Talare 1/2 tilldelade av merge_channel_transcriptions; dela upp
+        # systemkanalen på flera fjärrtalare om den diariserats.
         segments = trans_result.segments
+        if diarization_segments:
+            from motesskribent.diarization.channel_diarizer import assign_system_speakers
+            segments = assign_system_speakers(segments, diarization_segments)
         num_speakers = len({s.speaker_id for s in segments if s.speaker_id})
     else:
         segments = _assign_speakers(trans_result.segments, diarization_segments)

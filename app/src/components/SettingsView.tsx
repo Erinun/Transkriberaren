@@ -220,6 +220,10 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
           onChange={(e) => update("defaultNumSpeakers", e.target.value)}
           className="w-32 px-3 py-2 rounded-lg glass-input text-sm"
         />
+        <p className="text-xs text-[var(--color-text-muted)]">
+          Vid inspelning är du alltid Talare 1. Med Auto eller 3+ skiljs fjärrdeltagarna åt (Talare 2, 3 …).
+          Anger du 1 eller 2 räknas alla fjärrdeltagare som Talare 2.
+        </p>
       </div>
 
       {/* Default formats */}

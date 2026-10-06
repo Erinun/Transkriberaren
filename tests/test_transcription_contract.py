@@ -4,7 +4,8 @@ Testerna körs utan modeller: transkriberingen ersätts med en fejk som
 registrerar sina argument. De skrevs mot koden före leverantörslagret och
 ska passera oförändrade efteråt — det visar att beteendet är detsamma.
 Sedan steg 2 är Pianissimo standardmotor, så testerna väljer KB-Whisper
-uttryckligen.
+uttryckligen. Sedan steg 2b diariseras systemkanalen i stereo när antalet
+talare är okänt; stereotesterna anger därför två talare (oförändrat flöde).
 """
 
 from __future__ import annotations
@@ -133,7 +134,7 @@ def test_stereo_transcribes_each_channel(tmp_path, monkeypatch, no_diarizer):
     })
     monkeypatch.setattr(transcriber, "transcribe", fake)
 
-    result = run_pipeline(audio, PipelineConfig(provider="kb-whisper", output_dir=tmp_path / "out", output_formats=["json"]))
+    result = run_pipeline(audio, PipelineConfig(provider="kb-whisper", num_speakers=2, output_dir=tmp_path / "out", output_formats=["json"]))
 
     assert [p.rsplit("/", 1)[-1].rsplit("\\", 1)[-1] for p, _ in fake.calls] == [
         "rec_mic_16k.wav", "rec_system_16k.wav",
@@ -154,7 +155,7 @@ def test_stereo_falls_back_to_mono_when_channels_empty(tmp_path, monkeypatch, no
     })
     monkeypatch.setattr(transcriber, "transcribe", fake)
 
-    result = run_pipeline(audio, PipelineConfig(provider="kb-whisper", output_dir=tmp_path / "out", output_formats=["json"]))
+    result = run_pipeline(audio, PipelineConfig(provider="kb-whisper", num_speakers=2, output_dir=tmp_path / "out", output_formats=["json"]))
 
     assert [p.rsplit("/", 1)[-1] for p, _ in fake.calls] == [
         "rec_mic_16k.wav", "rec_system_16k.wav", "rec_16k.wav",

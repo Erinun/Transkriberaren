@@ -38,11 +38,11 @@ def merge_channel_transcriptions(
     sorterar kronologiskt och deduplicerar mic-bleed.
     """
     for seg in mic_result.segments:
-        seg.speaker_id = "SPEAKER_00"
+        seg.speaker_id = MIC_SPEAKER_ID
         seg.speaker_label = "Talare 1"
 
     for seg in system_result.segments:
-        seg.speaker_id = "SPEAKER_01"
+        seg.speaker_id = SYSTEM_SPEAKER_ID
         seg.speaker_label = "Talare 2"
 
     merged = mic_result.segments + system_result.segments
@@ -70,6 +70,52 @@ def merge_channel_transcriptions(
         model_name=mic_result.model_name,
         audio_duration=max(mic_result.audio_duration, system_result.audio_duration),
     )
+
+
+MIC_SPEAKER_ID = "SPEAKER_00"
+SYSTEM_SPEAKER_ID = "SPEAKER_01"
+
+
+def assign_system_speakers(
+    segments: list[TranscribedSegment],
+    system_diarization: list,
+) -> list[TranscribedSegment]:
+    """Dela upp systemkanalens segment på flera talare med hjälp av diarisering.
+
+    Mikrofonsegment (Talare 1) lämnas orörda. Varje systemsegment får den
+    diariserade talare som överlappar mest i tid, eller den närmaste om inget
+    överlappar. Fjärrtalarna numreras Talare 2, 3, … i ordning efter första
+    replik. Utan diariseringssegment lämnas allt som det är (Talare 2).
+    """
+    if not system_diarization:
+        return segments
+
+    def _best(seg) -> str:
+        best_id, best_overlap = None, 0.0
+        for d in system_diarization:
+            overlap = min(seg.end, d.end) - max(seg.start, d.start)
+            if overlap > best_overlap:
+                best_id, best_overlap = d.speaker_id, overlap
+        if best_id is not None:
+            return best_id
+        nearest = min(
+            system_diarization,
+            key=lambda d: max(d.start - seg.end, seg.start - d.end, 0.0),
+        )
+        return nearest.speaker_id
+
+    remap: dict[str, tuple[str, str]] = {}
+    for seg in segments:
+        if seg.speaker_id != SYSTEM_SPEAKER_ID:
+            continue
+        diar_id = _best(seg)
+        if diar_id not in remap:
+            n = len(remap) + 1
+            remap[diar_id] = (f"SPEAKER_{n:02d}", f"Talare {n + 1}")
+        seg.speaker_id, seg.speaker_label = remap[diar_id]
+
+    logger.info("Systemkanalen uppdelad på %d fjärrtalare", len(remap))
+    return segments
 
 
 def _deduplicate_bleed(

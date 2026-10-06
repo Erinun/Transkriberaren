@@ -19,6 +19,21 @@
 - `PipelineConfig.provider` och `PipelineResult.engine` har lagts till. `server.py` (warmup och transcribe) och `cli.py` (`--motor`) väljer motor, och IPC-svaren har fått fältet `engine`. Rust och frontend är oförändrade: utan `provider` används KB-Whisper, och Rust ignorerar det nya fältet.
 - **Verifiering av oförändrat beteende:** `tests/test_transcription_contract.py` skrevs och kördes **mot koden före ombyggnaden** (5/5 passerade) och sedan oförändrat mot den nya koden (5/5). Testerna låser exakt vilka argument som går till KB-Whisper i alla tre profiler, i stereoflödet per kanal och i reserven till mono, samt Markdown- och JSON-utdata. En jämförelse med riktig modell på samma ljudfil har inte gjorts, eftersom modellerna inte kan hämtas i den här miljön.
 
+## Steg 2b: fjärrdeltagare i inspelningar (klart)
+
+**Byggt:**
+- Vid stereo-inspelningar körs `diarize` på **systemkanalen**, parallellt med transkriberingen. Det sker när antalet talare är okänt (Auto) eller satt till 3 eller fler. Ett angivet antal räknas inklusive dig, så `diarize` får `num_speakers - 1`.
+- `channel_diarizer.assign_system_speakers` ger varje systemsegment den fjärrtalare som överlappar mest, eller den närmaste om inget överlappar. Fjärrtalarna numreras Talare 2, 3, … i ordning efter första replik. Mikrofonen är alltid Talare 1.
+- 1 eller 2 angivna talare: ingen separering, samma beteende som tidigare.
+- Om separeringen misslyckas blir alla fjärrdeltagare Talare 2 och användaren får varningen "Talarseparering av fjärrdeltagare ej tillgänglig – alla visas som Talare 2".
+- Inställningssidan förklarar hur antalet talare påverkar inspelningar.
+
+**Verifierat genom körning här:** 188 Python-tester passerar, varav 11 nya i `tests/test_remote_speakers.py`. De täcker uppdelning och numrering, överlapp och närmaste segment, att mikrofonen aldrig ändras, rätt fil och rätt talarantal till `diarize`, att flödet hoppas över vid 1–2 talare, fel med varning och tyst systemkanal. Frontend bygger.
+
+**Inte verifierat:** hur väl `diarize` skiljer röster i riktigt systemljud från Teams. Röster genom komprimerat mötesljud kan vara svårare att skilja åt än i rumsinspelningar. Det märks först på riktiga möten, och tröskeln för sammanslagning av lika röster (0,55) kan behöva justeras.
+
+**Avgränsning:** mikrofonkanalen diariseras inte. Vid ett fysiskt möte där flera personer sitter vid samma mikrofon blir de fortfarande alla Talare 1.
+
 ## Steg 2: Pianissimo som lokal standardmotor (klart)
 
 **Byggt:**
@@ -71,7 +86,7 @@ Allt det kräver Windows eller modellåtkomst. Kör `bench_asr.py` (bilaga A) oc
 |---|---|
 | 1 ✓ | Leverantörsgränssnitt + KB-Whisper |
 | 2 ✓ | Pianissimo som standardmotor med reserv |
-| **2b** | **Röstbaserad talarseparering även för inspelningar.** Systemkanalen körs genom `diarize`, så att fjärrdeltagare blir Talare 2, 3, … Mikrofonkanalen förblir Talare 1. |
+| 2b ✓ | Röstbaserad talarseparering av fjärrdeltagare i inspelningar |
 | 3 | AI-leverantörslager (OpenAI-kompatibelt, Berget AI förvalt, nyckel i nyckelförvaringen). **Ersätter Ollama-kopplingen.** Ingen modell behöver laddas ner, bara URL och API-nyckel. |
 | 4 | Mötesanteckningar. Sparas som filer på disk om historiken i `localStorage` inte räcker. |
 | 5 | Fjärrtranskribering |

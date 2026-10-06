@@ -292,7 +292,7 @@ class TestPipelineWithPianissimo:
         monkeypatch.setattr(transcriber, "transcribe", kb)
 
         result = run_pipeline(_wav(tmp_path / "rec.wav", channels=2), PipelineConfig(
-            output_dir=tmp_path / "out", output_formats=["json"],
+            num_speakers=2, output_dir=tmp_path / "out", output_formats=["json"],
         ))
 
         assert kb_files == ["rec_mic_16k.wav", "rec_system_16k.wav"]
