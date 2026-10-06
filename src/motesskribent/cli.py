@@ -71,8 +71,9 @@ def _run_json_ipc(audio_file: Path, config):
             "output_files": [str(f) for f in result.output_files],
             "md_content": result.md_content,
             "warnings": result.warnings,
-            "model_name": str(config.model_path),
+            "model_name": result.model_name,
             "engine": result.engine,
+            "engine_requested": config.provider,
             "word_count": sum(len(seg.text.split()) for seg in result.segments),
             "segments": [
                 {
@@ -103,8 +104,9 @@ def _run_json_ipc(audio_file: Path, config):
 
 @main.command()
 @click.argument("audio_file", type=click.Path(exists=True, path_type=Path))
-@click.option("--motor", default="kb-whisper", help="Transkriberingsmotor (default: kb-whisper).")
-@click.option("--modell", default="KBLab/kb-whisper-base", help="Whisper-modell att använda.")
+@click.option("--motor", default="pianissimo",
+              help="Transkriberingsmotor: pianissimo (default) eller kb-whisper (även reserv).")
+@click.option("--modell", default="KBLab/kb-whisper-base", help="KB-Whisper-modell (även reserv).")
 @click.option("--talare", type=int, default=None, help="Antal talare (auto om ej angivet).")
 @click.option("--format", "formats", multiple=True, default=["markdown", "json"],
               help="Outputformat (markdown, json).")
@@ -168,7 +170,10 @@ def transkribera(audio_file: Path, motor: str, modell: str, talare: int | None,
     console.print()
     console.print("[green bold]Transkribering klar![/green bold]")
     console.print(f"  Längd: {result.total_duration:.0f}s ljud → {result.processing_time:.1f}s bearbetning")
+    console.print(f"  Motor: {result.engine} ({result.model_name})")
     console.print(f"  Talare: {result.num_speakers}")
+    for w in result.warnings:
+        console.print(f"  [yellow]Obs:[/yellow] {w}")
     console.print(f"  Segment: {len(result.segments)}")
     console.print()
     for f in result.output_files:
@@ -177,8 +182,13 @@ def transkribera(audio_file: Path, motor: str, modell: str, talare: int | None,
 
 @main.command()
 def modeller():
-    """Visa tillgängliga KB-Whisper-modeller."""
-    table = Table(title="KB-Whisper-modeller")
+    """Visa tillgängliga transkriberingsmodeller."""
+    console.print(
+        "[bold]Standardmotor:[/bold] Pianissimo (KlangAI/pianissimo-sv-onnx, int8, ~660 MB, ~1,5 GB RAM). "
+        "Av Klang, licens CC BY 4.0. Välj med --motor pianissimo."
+    )
+    console.print()
+    table = Table(title="KB-Whisper-modeller (--motor kb-whisper, även reserv)")
     table.add_column("Modell", style="cyan")
     table.add_column("Storlek", style="green")
     table.add_column("RAM", style="yellow")

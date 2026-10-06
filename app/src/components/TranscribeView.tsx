@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { PipelineSettings } from "../hooks/usePipeline";
 import type { HistoryEntry } from "../hooks/useHistory";
 import CustomSelect from "./CustomSelect";
+import { DEFAULT_ENGINE, normalizeEngine } from "../lib/engines";
 
 interface Props {
   onStart: (filePath: string, settings: PipelineSettings) => void;
@@ -29,6 +30,7 @@ const SETTINGS_KEY = "motesskribent-settings";
 
 function loadDefaultSettings() {
   const defaults = {
+    provider: DEFAULT_ENGINE as string,
     model: "KBLab/kb-whisper-base",
     numSpeakers: "",
     formats: { markdown: true, json: true, docx: false },
@@ -46,6 +48,7 @@ function loadDefaultSettings() {
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
       }
       if (s.defaultModel) defaults.model = s.defaultModel;
+      defaults.provider = normalizeEngine(s.defaultEngine);
       if (s.defaultNumSpeakers) defaults.numSpeakers = s.defaultNumSpeakers;
       if (s.defaultFormats) defaults.formats = { ...defaults.formats, ...s.defaultFormats };
       if (typeof s.vadEnabled === "boolean") defaults.vadEnabled = s.vadEnabled;
@@ -94,6 +97,7 @@ export default function TranscribeView({ onStart, history, onViewHistory, diariz
     if (formats.docx) fmtList.push("docx");
 
     onStart(filePath, {
+      provider: defaults.provider,
       model,
       numSpeakers: numSpeakers ? parseInt(numSpeakers) : null,
       formats: fmtList,

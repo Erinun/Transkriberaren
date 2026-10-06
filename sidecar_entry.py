@@ -109,6 +109,16 @@ if os.path.isdir(models_dir):
         else:
             print("[sidecar] Inga brutna symlinks hittade", file=sys.stderr)
 
+    # Pianissimo (standardmotor) + Silero VAD för onnx-asr. Saknas de används
+    # KB-Whisper som reserv; det är inte kritiskt.
+    for _name in ("pianissimo-sv-onnx", "silero-vad-onnx"):
+        _dir = os.path.join(models_dir, _name)
+        _files = os.listdir(_dir) if os.path.isdir(_dir) else []
+        if _files:
+            print(f"[sidecar] Modell hittad: {_name} ({len(_files)} filer)", file=sys.stderr)
+        else:
+            print(f"[sidecar] VARNING: {_name} saknas — KB-Whisper används som reserv", file=sys.stderr)
+
     # Pre-flight: validera varje hittad whisper-modell
     _any_model_ok = False
     for _model_name in _found_whisper_models:

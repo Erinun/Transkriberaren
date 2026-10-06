@@ -31,7 +31,12 @@ def _handle_ping(request_id: str) -> None:
 
 def _handle_warmup(request_id: str, config: dict) -> None:
     """Load models into memory. Parallelizes whisper + diarize loading."""
-    from motesskribent.transcription.providers import TranscriptionOptions, get_provider
+    from motesskribent.transcription.providers import (
+        FALLBACK_PROVIDER,
+        TranscriptionOptions,
+        fallback_warning,
+        get_provider,
+    )
     from motesskribent.transcription.transcriber import ModelResolutionError
 
     model = config.get("model", "KBLab/kb-whisper-base")
@@ -47,8 +52,19 @@ def _handle_warmup(request_id: str, config: dict) -> None:
         "message": "Laddar modeller...",
     })
 
+    engine = {"id": provider.id, "warning": None}
+
     def load_transcriber():
-        provider.load(TranscriptionOptions(model=model))
+        try:
+            provider.load(TranscriptionOptions(model=model))
+        except Exception as e:
+            if provider.id == FALLBACK_PROVIDER:
+                raise
+            logger.warning("%s kunde inte laddas, laddar %s", provider.id, FALLBACK_PROVIDER, exc_info=True)
+            fallback = get_provider(FALLBACK_PROVIDER)
+            fallback.load(TranscriptionOptions(model=model))
+            engine["id"] = fallback.id
+            engine["warning"] = fallback_warning(provider, fallback, e)
 
     def load_diarizer():
         from motesskribent.diarization.diarizer import _warmup_models
@@ -112,13 +128,15 @@ def _handle_warmup(request_id: str, config: dict) -> None:
         "percent": 100,
         "message": "Modeller laddade",
         "diarization_available": diarizer_ok,
-        "engine": provider.id,
+        "engine": engine["id"],
+        "engine_warning": engine["warning"],
     })
 
 
 def _handle_transcribe(request_id: str, audio_path: str, config: dict) -> None:
     """Run the full pipeline, emitting progress events."""
     from motesskribent.pipeline import PipelineConfig, run_pipeline
+    from motesskribent.transcription.providers import DEFAULT_PROVIDER
 
     pipeline_config = PipelineConfig(
         model_path=config.get("model", "KBLab/kb-whisper-base"),
@@ -129,7 +147,7 @@ def _handle_transcribe(request_id: str, audio_path: str, config: dict) -> None:
         vad_enabled=config.get("vad_enabled", True),
         speed_profile=config.get("speed_profile", "balanced"),
         audio_source=config.get("audio_source"),
-        provider=config.get("provider") or "kb-whisper",
+        provider=config.get("provider") or DEFAULT_PROVIDER,
     )
 
     def on_progress(step: str, fraction: float, detail: str = ""):
@@ -172,8 +190,9 @@ def _handle_transcribe(request_id: str, audio_path: str, config: dict) -> None:
         "output_files": [str(f) for f in result.output_files],
         "md_content": result.md_content,
         "warnings": result.warnings,
-        "model_name": str(pipeline_config.model_path),
+        "model_name": result.model_name,
         "engine": result.engine,
+        "engine_requested": pipeline_config.provider,
         "word_count": sum(len(seg.text.split()) for seg in result.segments),
         "segments": [
             {

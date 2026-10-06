@@ -41,6 +41,34 @@ struct PendingRequest {
     done: Arc<Notify>,
 }
 
+/// Result of a warmup: which engine got loaded and whether diarization works.
+#[derive(Debug, Clone, Default, serde::Serialize, PartialEq)]
+pub struct WarmupInfo {
+    pub diarization_available: bool,
+    /// Engine actually loaded (the fallback engine if the chosen one failed).
+    pub engine: Option<String>,
+    /// Swedish message to show the user when the fallback engine was used.
+    pub engine_warning: Option<String>,
+}
+
+impl WarmupInfo {
+    fn from_events(events: &[Value]) -> Self {
+        let mut info = WarmupInfo::default();
+        for ev in events {
+            if ev.get("diarization_available").and_then(|v| v.as_bool()) == Some(true) {
+                info.diarization_available = true;
+            }
+            if let Some(engine) = ev.get("engine").and_then(|v| v.as_str()) {
+                info.engine = Some(engine.to_string());
+            }
+            if let Some(warning) = ev.get("engine_warning").and_then(|v| v.as_str()) {
+                info.engine_warning = Some(warning.to_string());
+            }
+        }
+        info
+    }
+}
+
 /// Manages a persistent Python sidecar process.
 pub struct SidecarManager {
     /// The child process handle + stdin writer. None if not started or crashed.
@@ -503,6 +531,7 @@ impl SidecarManager {
                 "prompt": config.prompt,
                 "speed_profile": config.speed_profile,
                 "audio_source": config.audio_source,
+                "provider": config.provider,
             }
         });
 
@@ -510,8 +539,8 @@ impl SidecarManager {
         Ok(())
     }
 
-    /// Warm up models in the sidecar. Returns whether diarization is available.
-    pub async fn warmup(&self, app: &AppHandle, model: &str) -> Result<bool, String> {
+    /// Warm up models in the sidecar for the given transcription engine.
+    pub async fn warmup(&self, app: &AppHandle, model: &str, provider: &str) -> Result<WarmupInfo, String> {
         let req_id = Uuid::new_v4().to_string();
 
         let cmd = serde_json::json!({
@@ -519,19 +548,14 @@ impl SidecarManager {
             "command": "warmup",
             "config": {
                 "model": model,
+                "provider": provider,
                 "num_speakers": null
             }
         });
 
         let events = self.send_command(cmd, app, 180).await?; // 3 min for warmup
 
-        let diarization_available = events.iter().any(|ev| {
-            ev.get("diarization_available")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false)
-        });
-
-        Ok(diarization_available)
+        Ok(WarmupInfo::from_events(&events))
     }
 
     /// Shut down the sidecar process gracefully.
@@ -562,5 +586,33 @@ impl SidecarManager {
             }
         }
         *guard = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn warmup_info_reads_engine_and_warning() {
+        let events = vec![
+            serde_json::json!({"type": "progress", "stage": "warmup", "percent": 0}),
+            serde_json::json!({
+                "type": "progress", "stage": "warmup", "percent": 100,
+                "diarization_available": true,
+                "engine": "kb-whisper",
+                "engine_warning": "Pianissimo kunde inte köras (x). KB-Whisper användes i stället."
+            }),
+        ];
+        let info = WarmupInfo::from_events(&events);
+        assert!(info.diarization_available);
+        assert_eq!(info.engine.as_deref(), Some("kb-whisper"));
+        assert!(info.engine_warning.unwrap().starts_with("Pianissimo kunde inte"));
+    }
+
+    #[test]
+    fn warmup_info_without_engine_fields() {
+        let events = vec![serde_json::json!({"percent": 100, "diarization_available": false, "engine_warning": null})];
+        assert_eq!(WarmupInfo::from_events(&events), WarmupInfo::default());
     }
 }

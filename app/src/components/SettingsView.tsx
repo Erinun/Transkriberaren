@@ -4,8 +4,10 @@ import type { OllamaStatus } from "../hooks/useOllama";
 import { usePromptTemplates } from "../hooks/usePromptTemplates";
 import { PROMPT_TEMPLATES } from "../data/promptTemplates";
 import CustomSelect from "./CustomSelect";
+import { DEFAULT_ENGINE, ENGINES, normalizeEngine, syncEnginePreference, type EngineId } from "../lib/engines";
 
 interface Settings {
+  defaultEngine: EngineId;
   defaultModel: string;
   defaultNumSpeakers: string;
   defaultFormats: { markdown: boolean; json: boolean; docx: boolean };
@@ -17,6 +19,7 @@ const STORAGE_KEY = "motesskribent-settings";
 
 function loadSettings(): Settings {
   const defaults: Settings = {
+    defaultEngine: DEFAULT_ENGINE,
     defaultModel: "KBLab/kb-whisper-base",
     defaultNumSpeakers: "",
     defaultFormats: { markdown: true, json: true, docx: false },
@@ -36,6 +39,7 @@ function loadSettings(): Settings {
       return {
         ...defaults,
         ...parsed,
+        defaultEngine: normalizeEngine(parsed.defaultEngine),
         defaultFormats: { ...defaults.defaultFormats, ...parsed.defaultFormats },
       };
     }
@@ -143,10 +147,30 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
         )}
       </div>
 
+      {/* Transcription engine */}
+      <div className="space-y-2">
+        <label className="block text-sm text-[var(--color-text-muted)]">Transkriberingsmotor</label>
+        <CustomSelect
+          value={settings.defaultEngine}
+          onChange={(v) => {
+            const engine = normalizeEngine(v);
+            update("defaultEngine", engine);
+            syncEnginePreference(engine);
+          }}
+          options={ENGINES.map((e) => ({ value: e.id, label: e.label }))}
+        />
+        <p className="text-xs text-[var(--color-text-muted)]">
+          {ENGINES.find((e) => e.id === settings.defaultEngine)?.description}
+          {" "}Ljudet bearbetas alltid lokalt på datorn.
+        </p>
+      </div>
+
       {/* Default model */}
       <div className="space-y-2">
         <div className="flex items-center gap-1.5">
-          <label className="block text-sm text-[var(--color-text-muted)]">Standardmodell</label>
+          <label className="block text-sm text-[var(--color-text-muted)]">
+            {settings.defaultEngine === "kb-whisper" ? "KB-Whisper-modell" : "KB-Whisper-modell (reserv)"}
+          </label>
           <button
             type="button"
             onClick={() => setShowModelInfo((v) => !v)}

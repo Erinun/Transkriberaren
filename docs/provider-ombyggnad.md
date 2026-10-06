@@ -6,11 +6,11 @@
 
 | Fråga | Beslut |
 |---|---|
-| 2. Provet | Du kör `bench_asr.py` på din dator. |
+| 2. Provet | Du kör `bench_asr.py` på din dator. Steg 2 byggs utan att vänta, och inställningarna justeras efter mätningen. |
 | 3. Ollama | Det nya OpenAI-kompatibla AI-lagret **ersätter** Ollama-kopplingen. Det ska gå att använda direkt med Berget AI:s URL och en API-nyckel, utan att ladda ner någon modell. |
 | 4. Storlek | Cirka +0,6 GB för Pianissimo är godkänt. |
 | 5. Lagring | Spara möten som filer på disk om det inte går att lösa på annat sätt. |
-| 1. Talarseparering | Svar: "nej, bygg med det nya". Tolkningen behöver bekräftas (se rapporten för steg 1). |
+| 1. Talarseparering | Röstbaserad talarseparering ska köras även på inspelningar, så att fjärrdeltagarna inte alla blir "Talare 2". Det blir ett eget steg direkt efter steg 2 (se nedan). |
 | 6–10 | Ej besvarade. Planens förslag gäller tills vidare: ordningen 1, 2, AI-lager, anteckningar, fjärrtranskribering, inställningar, och AI-logiken i Rust. |
 
 ## Steg 1: leverantörsgränssnitt (klart)
@@ -18,6 +18,64 @@
 - `src/motesskribent/transcription/providers/` innehåller `TranscriptionProvider` (`load`, `transcribe`), `TranscriptionOptions`, ett register (`get_provider`, standard `kb-whisper`) och `KbWhisperProvider`, som omsluter dagens `transcriber.transcribe()` oförändrad.
 - `PipelineConfig.provider` och `PipelineResult.engine` har lagts till. `server.py` (warmup och transcribe) och `cli.py` (`--motor`) väljer motor, och IPC-svaren har fått fältet `engine`. Rust och frontend är oförändrade: utan `provider` används KB-Whisper, och Rust ignorerar det nya fältet.
 - **Verifiering av oförändrat beteende:** `tests/test_transcription_contract.py` skrevs och kördes **mot koden före ombyggnaden** (5/5 passerade) och sedan oförändrat mot den nya koden (5/5). Testerna låser exakt vilka argument som går till KB-Whisper i alla tre profiler, i stereoflödet per kanal och i reserven till mono, samt Markdown- och JSON-utdata. En jämförelse med riktig modell på samma ljudfil har inte gjorts, eftersom modellerna inte kan hämtas i den här miljön.
+
+## Steg 2: Pianissimo som lokal standardmotor (klart)
+
+**Byggt:**
+- `providers/pianissimo.py`: `onnx_asr.load_model("KlangAI/pianissimo-sv-onnx", quantization="int8")` + `load_vad("silero")`, `with_vad(...).with_timestamps()`.
+  - Ljudet läses som 16 kHz-array och delas vid pauser (VAD: tystnad 500 ms, padding 200 ms, max 30 s per bit).
+  - Token-tiderna förskjuts till absoluta tider och byggs ihop till ord (`TranscribedWord`, konfidens = exp(medel-logprob)).
+  - Långa talbitar delas i segment vid meningsslut, vid pauser över 0,8 s och senast efter 12 s. Annars skulle en 30-sekundersbit med två talare få bara en talare.
+- **Reserv:** om Pianissimo inte går att ladda eller köra görs transkriberingen om med KB-Whisper, även båda kanalerna vid stereo. Användaren får varningen "Pianissimo kunde inte köras (…). KB-Whisper användes i stället." i resultatvyn. Vid uppstart laddas KB-Whisper i stället, och varningen visas som notis.
+- **Standardmotor** är `pianissimo` i Python, CLI (`--motor`), Rust och gränssnitt. Den befintliga KB-Whisper-modellen väljs fortfarande, som alternativ och som reserv.
+- **Rust:**
+  - `TranscriptionConfig.provider` och `engine`/`engine_requested` i result-eventet.
+  - Warmup laddar vald motor. Valet läses från `transcription_engine.txt` i app-konfigkatalogen och skrivs av det nya kommandot `set_transcription_engine`.
+  - Händelsen `transcription-engine-status`.
+- **Gränssnitt:**
+  - Motorval i Inställningar.
+  - "Motor: Pianissimo · Modell: …" i resultatvyn. Motorn sparas i historiken.
+  - Om-sidan anger Pianissimo av Klang, CC BY 4.0.
+- **Paketering:**
+  - `onnx-asr[cpu]>=0.12` och `requires-python >=3.11` (`pyproject.toml`).
+  - `collect_all("onnx_asr")` (`sidecar.spec`).
+  - `download_models.py` laddar ner till `models/pianissimo-sv-onnx/` och `models/silero-vad-onnx/` via onnx-asr. Det följer samma mönster som idag: hämtas vid bygget och bundlas offline.
+  - `sidecar_entry.py` loggar om modellerna finns.
+  - CI-cachen för modeller byggs om automatiskt, eftersom nyckeln är hashen av `download_models.py`.
+
+**Installationens storlek:** modellen är cirka 660 MB enligt Klang, och Silero-ONNX cirka 2 MB. onnx-asr är ren Python, och onnxruntime fanns redan. Uppskattningsvis växer den installerade appen med **cirka 0,66 GB**. Installationsfilen växer sannolikt med 0,55–0,65 GB, eftersom int8-vikter komprimeras dåligt. Exakt siffra fås först vid ett bygge på Windows. Installern kan då behöva `DiskSpanning` i Inno Setup om den passerar cirka 2 GB.
+
+**Verifierat genom körning här:**
+- 177 Python-tester passerar, varav 25 nya för Pianissimo:
+  - token → ord → segment
+  - modelladdning med int8, lokala kataloger och offline-fel
+  - reserv i mono och stereo
+  - talartilldelning på meningsdelade segment
+  - warmup med och utan reserv
+- KB-Whispers kontraktstester passerar oförändrade.
+- Körtest med riktiga onnx-asr och faster-whisper utan modeller: Pianissimo provas, reserven tar över, och felet blir tydligt både i offline-läge och när nätet är blockerat.
+- Rust: `cargo clippy --all-targets -D warnings` och `cargo test` (12 tester, varav 4 nya) passerar på en Linux-kopia där de Windows-specifika ljudmodulerna ersatts med stubbar. Den riktiga Windows-kompileringen är inte verifierad här.
+- Frontend: `tsc` och `vite build` passerar.
+
+**Inte verifierat:**
+- Transkribering med den riktiga Pianissimo-modellen: kvalitet, tid, minne, om modellen ger skiljetecken och vilken modelltyp den har.
+- Att `download_models.py` faktiskt får rätt filer.
+- Installationens verkliga storlek.
+- Gränssnittet i en körande app.
+
+Allt det kräver Windows eller modellåtkomst. Kör `bench_asr.py` (bilaga A) och ett bygge på din dator. Justerbara konstanter finns överst i `pianissimo.py`.
+
+## Uppdaterad plan
+
+| Steg | Innehåll |
+|---|---|
+| 1 ✓ | Leverantörsgränssnitt + KB-Whisper |
+| 2 ✓ | Pianissimo som standardmotor med reserv |
+| **2b** | **Röstbaserad talarseparering även för inspelningar.** Systemkanalen körs genom `diarize`, så att fjärrdeltagare blir Talare 2, 3, … Mikrofonkanalen förblir Talare 1. |
+| 3 | AI-leverantörslager (OpenAI-kompatibelt, Berget AI förvalt, nyckel i nyckelförvaringen). **Ersätter Ollama-kopplingen.** Ingen modell behöver laddas ner, bara URL och API-nyckel. |
+| 4 | Mötesanteckningar. Sparas som filer på disk om historiken i `localStorage` inte räcker. |
+| 5 | Fjärrtranskribering |
+| 6 | Inställningssidan |
 
 ## Sammanfattning
 

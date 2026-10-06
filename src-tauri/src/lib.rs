@@ -8,7 +8,7 @@ mod sidecar_manager;
 pub(crate) mod wasapi_loopback;
 
 use audio_capture::RecorderState;
-use commands::{copy_file_to, detect_audio_mode, get_default_output_dir, get_recording_status, list_output_devices, ollama_cancel, ollama_cancel_all, ollama_check_health, ollama_generate, ollama_list_models, open_file, pause_recording, read_file_content, resume_recording, run_transcription, set_meeting_detection, start_recording, stop_recording, write_binary_to_file, write_text_to_file};
+use commands::{copy_file_to, detect_audio_mode, set_transcription_engine, get_default_output_dir, get_recording_status, list_output_devices, ollama_cancel, ollama_cancel_all, ollama_check_health, ollama_generate, ollama_list_models, open_file, pause_recording, read_file_content, resume_recording, run_transcription, set_meeting_detection, start_recording, stop_recording, write_binary_to_file, write_text_to_file};
 use meeting_detector::MeetingDetector;
 use sidecar_manager::SidecarManager;
 use tauri::{Emitter, Manager};
@@ -89,11 +89,18 @@ pub fn run() {
 
                 let _ = handle.emit("sidecar-status", "warming_up");
 
-                match sidecar.warmup(&handle, "KBLab/kb-whisper-base").await {
-                    Ok(diarization_available) => {
-                        log::info!("Sidecar warmup klar, diarization: {}", diarization_available);
+                let engine = commands::load_engine_preference(&handle);
+                log::info!("Transkriberingsmotor vid uppstart: {}", engine);
+
+                match sidecar.warmup(&handle, "KBLab/kb-whisper-base", &engine).await {
+                    Ok(info) => {
+                        log::info!(
+                            "Sidecar warmup klar, motor: {:?}, diarization: {}",
+                            info.engine, info.diarization_available
+                        );
                         let _ = handle.emit("sidecar-status", "ready");
-                        let _ = handle.emit("diarization-status", diarization_available);
+                        let _ = handle.emit("diarization-status", info.diarization_available);
+                        let _ = handle.emit("transcription-engine-status", &info);
                     }
                     Err(e) => {
                         log::error!("Bakgrunds-warmup misslyckades: {}", e);
@@ -124,6 +131,7 @@ pub fn run() {
             ollama_cancel_all,
             set_meeting_detection,
             get_recording_status,
+            set_transcription_engine,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

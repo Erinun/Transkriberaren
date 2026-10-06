@@ -17,6 +17,7 @@ import { useHistory, type HistoryEntry, type OllamaResult } from "./hooks/useHis
 import { useOllamaStatus } from "./hooks/useOllama";
 import { useRecorder } from "./hooks/useRecorder";
 import { useAudioLevel } from "./hooks/useAudioLevel";
+import { DEFAULT_ENGINE, normalizeEngine, syncEnginePreference } from "./lib/engines";
 
 type View = "dashboard" | "transcribe" | "history" | "processing" | "result" | "settings" | "recording";
 type SidecarStatus = "starting" | "warming_up" | "ready" | "error";
@@ -30,6 +31,7 @@ const NAV_ITEMS: { id: View; label: string }[] = [
 const STORAGE_KEY = "motesskribent-settings";
 
 function loadSettingsForRecording(): PipelineSettings {
+  let provider: string = DEFAULT_ENGINE;
   let model = "KBLab/kb-whisper-base";
   let numSpeakers: number | null = null;
   let formats = ["markdown", "json"];
@@ -47,6 +49,7 @@ function loadSettingsForRecording(): PipelineSettings {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
       }
       if (s.defaultModel) model = s.defaultModel;
+      provider = normalizeEngine(s.defaultEngine);
       if (s.defaultNumSpeakers && s.defaultNumSpeakers !== "") {
         numSpeakers = parseInt(s.defaultNumSpeakers);
       }
@@ -65,6 +68,7 @@ function loadSettingsForRecording(): PipelineSettings {
   let outputDir = "";
 
   return {
+    provider,
     model,
     numSpeakers,
     formats,
@@ -103,6 +107,23 @@ function AppInner() {
   // Check Ollama health on mount
   useEffect(() => {
     ollamaStatus.checkHealth();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep Rust's startup engine in sync with the saved setting
+  useEffect(() => {
+    syncEnginePreference(normalizeEngine(recordingSettings.provider));
+  }, [recordingSettings.provider]);
+
+  // Show a warning if the chosen engine could not be loaded at startup
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+    listen<{ engine: string | null; engine_warning: string | null }>("transcription-engine-status", (event) => {
+      if (event.payload.engine_warning) showToast(event.payload.engine_warning, "info");
+    }).then((fn) => {
+      if (cancelled) fn(); else unlisten = fn;
+    });
+    return () => { cancelled = true; unlisten?.(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-start meeting detection if previously enabled
@@ -220,7 +241,7 @@ function AppInner() {
     }
     if (pipeline.status === "done" && pipeline.mdContent && pipeline.summary && !historySavedRef.current) {
       historySavedRef.current = true;
-      const id = history.addEntry(currentAudioName, pipeline.mdContent, pipeline.summary, pipeline.modelName, pipeline.wordCount);
+      const id = history.addEntry(currentAudioName, pipeline.mdContent, pipeline.summary, pipeline.modelName, pipeline.wordCount, pipeline.engine);
       setCurrentEntryId(id);
       if (!toastShownRef.current) {
         toastShownRef.current = true;
@@ -260,6 +281,7 @@ function AppInner() {
         warnings: [],
         segments: [],
         modelName: viewingHistory!.modelName ?? null,
+        engine: viewingHistory!.engine ?? null,
         wordCount: viewingHistory!.wordCount ?? 0,
         onBack: () => {
           setViewingHistory(null);
@@ -275,6 +297,7 @@ function AppInner() {
         warnings: pipeline.warnings,
         segments: pipeline.segments,
         modelName: pipeline.modelName,
+        engine: pipeline.engine,
         wordCount: pipeline.wordCount,
         onBack: () => {
           pipeline.reset();

@@ -61,7 +61,7 @@ audio file → preprocessor → diarizer → transcriber → _assign_speakers �
 
 2. **diarizer** runs the `diarize` library (Silero VAD + WeSpeaker ONNX + spectral clustering) on CPU, no HF token. Merges short same-speaker segments, assigns labels ("Talare 1", "Talare 2") by order of first appearance. Output: `DiarizationResult` with `SpeakerSegment` list. Fails gracefully — pipeline continues without speakers. Stereo recordings (left=mic, right=system) skip it: each channel is transcribed separately and `channel_diarizer.merge_channel_transcriptions` labels mic=Talare 1, system=Talare 2.
 
-3. **transcription provider** (`transcription/providers/`) is selected by `PipelineConfig.provider` (default `"kb-whisper"`). `KbWhisperProvider` wraps `transcriber.transcribe()` (faster-whisper with KB-Whisper CTranslate2 models). New engines subclass `TranscriptionProvider` and register in `registry.py`. Output: `TranscriptionResult` with `TranscribedSegment` list.
+3. **transcription provider** (`transcription/providers/`) is selected by `PipelineConfig.provider` (default `"kb-whisper"`). Default is `"pianissimo"` (`PianissimoProvider`: KlangAI/pianissimo-sv-onnx int8 via onnx-asr + Silero VAD, token timestamps → words → sentence-sized segments). `KbWhisperProvider` wraps `transcriber.transcribe()` (faster-whisper with KB-Whisper CTranslate2 models) and is the fallback: if the chosen engine fails to load or run, `run_pipeline` reruns transcription with KB-Whisper and adds a Swedish warning; `PipelineResult.engine` / IPC `engine` tell which engine was used. New engines subclass `TranscriptionProvider` and register in `registry.py`. Output: `TranscriptionResult` with `TranscribedSegment` list.
 
 4. **`_assign_speakers`** matches each transcription segment to the diarization segment with maximum time overlap.
 
@@ -76,6 +76,8 @@ Both transcriber and diarizer cache their models at module level to avoid reload
 - **`model.transcribe()` returns a generator** — must consume exactly once. Current code iterates and builds a list.
 - **faster-whisper word field is `probability`**, mapped to `TranscribedWord.confidence` in our dataclass.
 - **Do not use `torchaudio.load()`** on Windows — torchaudio 2.10+ requires torchcodec + FFmpeg DLLs. Use `soundfile.read()` for loading; only use `torchaudio.functional.resample()` (pure torch, no backend needed).
+- **Pianissimo models are bundled as plain directories** `models/pianissimo-sv-onnx/` and `models/silero-vad-onnx/` (downloaded by `scripts/download_models.py` through onnx-asr), found via `MOTESSKRIBENT_MODELS_DIR` or `HF_HOME`. onnx-asr ≥0.12 excludes onnxruntime 1.24.1/1.25.x/1.26.0; requires Python ≥3.11.
+- **Startup warmup engine** is read by Rust from `<app_config_dir>/transcription_engine.txt` (written by the `set_transcription_engine` command when the setting changes), because settings otherwise live only in frontend `localStorage`.
 - **Tests patch `transcriber.transcribe` as a module attribute** — providers must call it via `transcriber.transcribe(...)`, not a `from ... import transcribe` binding. `tests/test_transcription_contract.py` locks the exact arguments the pipeline sends to KB-Whisper.
 - **Segment merging exists in two places**: `_merge_segments` in diarizer.py (SpeakerSegment) and `merge_short_segments` in formatter.py (TranscribedSegment). Different dataclass types, similar logic.
 

@@ -3,8 +3,8 @@ use crate::meeting_detector::MeetingDetector;
 use crate::ollama::CancellationMap;
 use crate::sidecar::{run_python_pipeline, TranscriptionConfig};
 use crate::sidecar_manager::SidecarManager;
-use std::path::PathBuf;
-use tauri::{AppHandle, State};
+use std::path::{Path, PathBuf};
+use tauri::{AppHandle, Manager, State};
 
 #[tauri::command]
 pub async fn run_transcription(
@@ -212,6 +212,39 @@ pub fn set_meeting_detection(
     log::info!("Mötesdetektering: {}", if enabled { "aktiverad" } else { "avaktiverad" });
 }
 
+/// Transkriberingsmotorer som sidecarn känner till. Den första är standard.
+pub const TRANSCRIPTION_ENGINES: [&str; 2] = ["pianissimo", "kb-whisper"];
+const ENGINE_PREFERENCE_FILE: &str = "transcription_engine.txt";
+
+fn engine_preference_path(app: &AppHandle) -> Option<PathBuf> {
+    app.path().app_config_dir().ok().map(|d| d.join(ENGINE_PREFERENCE_FILE))
+}
+
+/// Läs vald motor från fil i app-konfigkatalogen. Okänt eller saknat värde ger standardmotorn.
+pub fn read_engine_preference(path: Option<&Path>) -> String {
+    path.and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| TRANSCRIPTION_ENGINES.contains(&s.as_str()))
+        .unwrap_or_else(|| TRANSCRIPTION_ENGINES[0].to_string())
+}
+
+pub fn load_engine_preference(app: &AppHandle) -> String {
+    read_engine_preference(engine_preference_path(app).as_deref())
+}
+
+/// Spara vald motor så att nästa uppstart värmer upp rätt modell.
+#[tauri::command]
+pub fn set_transcription_engine(app: AppHandle, engine: String) -> Result<(), String> {
+    if !TRANSCRIPTION_ENGINES.contains(&engine.as_str()) {
+        return Err(format!("Okänd transkriberingsmotor: {}", engine));
+    }
+    let path = engine_preference_path(&app).ok_or("Hittar ingen konfigurationskatalog")?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("Kunde inte skapa konfigurationskatalog: {}", e))?;
+    }
+    std::fs::write(&path, &engine).map_err(|e| format!("Kunde inte spara motorval: {}", e))
+}
+
 pub fn find_python(_app: &AppHandle) -> Result<String, String> {
     // 1. Check MOTESSKRIBENT_PYTHON env var (explicit override)
     if let Ok(p) = std::env::var("MOTESSKRIBENT_PYTHON") {
@@ -241,4 +274,27 @@ pub fn find_python(_app: &AppHandle) -> Result<String, String> {
 
     // 3. Fall back to system python
     Ok("python".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn engine_preference_defaults_to_pianissimo() {
+        assert_eq!(read_engine_preference(None), "pianissimo");
+        assert_eq!(read_engine_preference(Some(Path::new("/finns/inte.txt"))), "pianissimo");
+    }
+
+    #[test]
+    fn engine_preference_reads_valid_and_rejects_unknown() {
+        let dir = std::env::temp_dir().join(format!("ms-engine-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("e.txt");
+        std::fs::write(&file, "kb-whisper\n").unwrap();
+        assert_eq!(read_engine_preference(Some(&file)), "kb-whisper");
+        std::fs::write(&file, "nagot-annat").unwrap();
+        assert_eq!(read_engine_preference(Some(&file)), "pianissimo");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

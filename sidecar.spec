@@ -22,6 +22,9 @@ silero_datas, silero_bins, silero_hiddens = collect_all("silero_vad")
 wespeaker_datas, wespeaker_bins, wespeaker_hiddens = collect_all("wespeakerruntime")
 onnxruntime_datas, onnxruntime_bins, onnxruntime_hiddens = collect_all("onnxruntime")
 
+# Pianissimo via onnx-asr (rena Python-moduler + onnxruntime ovan)
+onnx_asr_datas, onnx_asr_bins, onnx_asr_hiddens = collect_all("onnx_asr")
+
 # faster-whisper (includes CTranslate2 bindings)
 fw_datas, fw_bins, fw_hiddens = collect_all("faster_whisper")
 ct2_datas, ct2_bins, ct2_hiddens = collect_all("ctranslate2")
@@ -41,6 +44,7 @@ all_datas = (
     + silero_datas
     + wespeaker_datas
     + onnxruntime_datas
+    + onnx_asr_datas
     + fw_datas
     + ct2_datas
     + torch_datas
@@ -53,6 +57,7 @@ all_binaries = (
     + silero_bins
     + wespeaker_bins
     + onnxruntime_bins
+    + onnx_asr_bins
     + fw_bins
     + ct2_bins
     + hf_bins
@@ -63,6 +68,7 @@ all_hiddenimports = (
     + silero_hiddens
     + wespeaker_hiddens
     + onnxruntime_hiddens
+    + onnx_asr_hiddens
     + fw_hiddens
     + ct2_hiddens
     + hf_hiddens

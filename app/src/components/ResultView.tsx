@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import ReactMarkdown from "react-markdown";
 import { generateDocxBase64 } from "../lib/generateDocx";
+import { engineLabel } from "../lib/engines";
 import type { TranscriptionSegment } from "../hooks/usePipeline";
 import type { OllamaResult } from "../hooks/useHistory";
 import { useOllama, type OllamaStatus, type OllamaOptions } from "../hooks/useOllama";
@@ -32,6 +33,7 @@ interface Props {
   onBack: () => void;
   segments: TranscriptionSegment[];
   modelName: string | null;
+  engine?: string | null;
   wordCount: number;
   onRetranscribe?: () => void;
   ollamaStatus: OllamaStatus;
@@ -120,6 +122,7 @@ export default function ResultView({
   onBack,
   segments,
   modelName,
+  engine,
   wordCount,
   onRetranscribe,
   ollamaStatus,
@@ -366,7 +369,10 @@ export default function ResultView({
           )}
           <div className="flex items-center gap-1.5">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-            <span>Modell: <span className="text-[var(--color-text)] font-medium">{extractModelShortName(modelName)}</span></span>
+            <span>
+              {engine && <>Motor: <span className="text-[var(--color-text)] font-medium">{engineLabel(engine)}</span>{" · "}</>}
+              Modell: <span className="text-[var(--color-text)] font-medium">{extractModelShortName(modelName)}</span>
+            </span>
           </div>
           <div className="flex items-center gap-1.5">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>

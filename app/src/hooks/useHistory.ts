@@ -16,6 +16,7 @@ export interface HistoryEntry {
   mdContent: string;
   summary: PipelineSummary;
   modelName?: string | null;
+  engine?: string | null;
   wordCount?: number;
   ollamaResults?: OllamaResult[];
 }
@@ -59,7 +60,7 @@ export function useHistory() {
   const [entries, setEntries] = useState<HistoryEntry[]>(loadEntries);
 
   const addEntry = useCallback(
-    (audioName: string, mdContent: string, summary: PipelineSummary, modelName?: string | null, wordCount?: number): string => {
+    (audioName: string, mdContent: string, summary: PipelineSummary, modelName?: string | null, wordCount?: number, engine?: string | null): string => {
       const id = crypto.randomUUID();
       const entry: HistoryEntry = {
         id,
@@ -68,6 +69,7 @@ export function useHistory() {
         mdContent,
         summary,
         modelName,
+        engine,
         wordCount,
       };
       setEntries((prev) => {

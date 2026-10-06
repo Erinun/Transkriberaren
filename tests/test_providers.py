@@ -11,6 +11,7 @@ from motesskribent.pipeline import PipelineConfig, run_pipeline
 from motesskribent.transcription import transcriber
 from motesskribent.transcription.providers import (
     DEFAULT_PROVIDER,
+    FALLBACK_PROVIDER,
     TranscriptionOptions,
     TranscriptionProvider,
     available_providers,
@@ -18,6 +19,7 @@ from motesskribent.transcription.providers import (
 )
 from motesskribent.transcription.providers import registry
 from motesskribent.transcription.providers.kb_whisper import KbWhisperProvider
+from motesskribent.transcription.providers.pianissimo import PianissimoProvider
 from motesskribent.transcription.transcriber import TranscribedSegment, TranscriptionResult
 
 
@@ -54,13 +56,16 @@ def fake_provider(monkeypatch):
 
 
 class TestRegistry:
-    def test_default_is_kb_whisper(self):
-        assert DEFAULT_PROVIDER == "kb-whisper"
-        assert isinstance(get_provider(), KbWhisperProvider)
-        assert isinstance(get_provider(None), KbWhisperProvider)
+    def test_default_is_pianissimo(self):
+        assert DEFAULT_PROVIDER == "pianissimo"
+        assert isinstance(get_provider(), PianissimoProvider)
+        assert isinstance(get_provider(None), PianissimoProvider)
 
-    def test_kb_whisper_listed(self):
-        assert "kb-whisper" in available_providers()
+    def test_fallback_is_kb_whisper(self):
+        assert FALLBACK_PROVIDER == "kb-whisper"
+
+    def test_both_engines_listed(self):
+        assert available_providers() == ["pianissimo", "kb-whisper"]
 
     def test_unknown_provider_raises_swedish_error(self):
         with pytest.raises(ValueError, match="Okänd transkriberingsmotor: 'finns-inte'"):
@@ -120,12 +125,16 @@ class TestPipelineUsesProvider:
         assert result.engine == "fake"
         assert [s.text for s in result.segments] == ["Från fejken."]
 
-    def test_default_engine_reported(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(transcriber, "transcribe", lambda *a, **k: _result([]))
+    def test_kb_whisper_engine_reported(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(transcriber, "transcribe", lambda *a, **k: _result([], model="KBLab/kb-whisper-base"))
         audio = tmp_path / "m.wav"
         sf.write(str(audio), np.zeros(16000, dtype="float32"), 16000)
-        result = run_pipeline(audio, PipelineConfig(num_speakers=1, output_dir=tmp_path / "out", output_formats=[]))
+        result = run_pipeline(audio, PipelineConfig(
+            provider="kb-whisper", num_speakers=1, output_dir=tmp_path / "out", output_formats=[],
+        ))
         assert result.engine == "kb-whisper"
+        assert result.model_name == "KBLab/kb-whisper-base"
+        assert result.warnings == []
 
     def test_unknown_provider_fails_before_work(self, tmp_path):
         audio = tmp_path / "m.wav"
@@ -159,7 +168,8 @@ class TestServerAndCli:
         events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
         result = next(e for e in events if e.get("type") == "result")
         assert result["engine"] == "fake"
-        assert result["model_name"] == "KBLab/kb-whisper-base"
+        assert result["engine_requested"] == "fake"
+        assert result["model_name"] == "fake"
         assert result["segments"][0]["text"] == "Från fejken."
 
     def test_cli_motor_option(self, tmp_path, fake_provider):

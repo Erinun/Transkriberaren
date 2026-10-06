@@ -83,7 +83,7 @@ def main():
         "pytorch_model*",
     ]
     for i, (repo_id, label) in enumerate(whisper_models, 1):
-        print(f"[1.{i}/3] Laddar ned {repo_id} (enbart CTranslate2) ...")
+        print(f"[1.{i}/4] Laddar ned {repo_id} (enbart CTranslate2) ...")
         snapshot_download(
             repo_id,
             cache_dir=CACHE_DIR,
@@ -97,7 +97,7 @@ def main():
     #      PyInstaller collect_all("silero_vad") tar hand om den.
     #    - WeSpeaker: laddar ned ONNX-modell till ~/.wespeaker/en/model.onnx.
     #      Biblioteket stödjer inga env-variabler, så vi kopierar till models/wespeaker/en/.
-    print("[2/3] Laddar ned diarize-modeller (WeSpeaker ONNX) ...")
+    print("[2/4] Laddar ned diarize-modeller (WeSpeaker ONNX) ...")
     sys.path.insert(0, str(PROJECT_ROOT / "src"))
     from motesskribent.diarization.diarizer import _warmup_models
     _warmup_models()
@@ -114,8 +114,29 @@ def main():
         print(f"  VARNING: WeSpeaker-modell saknas: {wespeaker_src}")
     print("  OK")
 
-    # 3. Replace symlinks with real file copies (critical for NSIS packaging)
-    print("[3/3] Ersätter symlinks med riktiga filer...")
+    # 3. Pianissimo (Klang, CC BY 4.0) + Silero VAD i ONNX-format för onnx-asr.
+    #    Laddas ned direkt till egna kataloger (inga symlinks). onnx-asr väljer
+    #    själv vilka filer som behövs för int8-kvantiseringen.
+    print("[3/4] Laddar ned Pianissimo int8 + Silero VAD (onnx-asr) ...")
+    from motesskribent.transcription.providers.pianissimo import (
+        LOCAL_DIR_NAME,
+        QUANTIZATION,
+        REPO_ID,
+        VAD_LOCAL_DIR_NAME,
+    )
+    import onnx_asr
+
+    pianissimo_dir = PROJECT_ROOT / "models" / LOCAL_DIR_NAME
+    vad_dir = PROJECT_ROOT / "models" / VAD_LOCAL_DIR_NAME
+    onnx_asr.load_model(REPO_ID, path=pianissimo_dir, quantization=QUANTIZATION)
+    onnx_asr.load_vad("silero", path=vad_dir)
+    for d in (pianissimo_dir, vad_dir):
+        size = sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
+        print(f"  {d.name}: {size / (1024**2):.0f} MB")
+    print("  OK")
+
+    # 4. Replace symlinks with real file copies (critical for NSIS packaging)
+    print("[4/4] Ersätter symlinks med riktiga filer...")
     hub_dir = Path(CACHE_DIR)
     resolved = _resolve_symlinks(hub_dir)
     print(f"  {resolved} symlinks ersatta")

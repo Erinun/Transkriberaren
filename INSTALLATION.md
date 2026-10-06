@@ -13,7 +13,9 @@ Ladda ner filen **MotesSkribent_x64.zip** från releases.
 
 ## 3. Bundlade modeller
 
-Installationen inkluderar tre AI-modeller för transkribering:
+Standardmotorn för transkribering är **Pianissimo** från Klang (int8, ~660 MB, kräver cirka 1,5 GB minne). Den är tränad för svenska. Pianissimo används under licensen CC BY 4.0, och Klang anges som upphovsman under Om MötesSkribent i appen.
+
+Installationen innehåller dessutom tre KB-Whisper-modeller. De kan väljas i stället för Pianissimo och används automatiskt som reserv om Pianissimo inte kan köras:
 
 | Modell | Storlek | Beskrivning |
 |--------|---------|-------------|
@@ -21,7 +23,7 @@ Installationen inkluderar tre AI-modeller för transkribering:
 | **kb-whisper-base** | ~240 MB | Standard, rekommenderas (2x snabbare än small) |
 | **kb-whisper-small** | ~460 MB | Bäst balans hastighet/kvalitet |
 
-Modell väljs i **Inställningar** i appen. Standardmodellen är **base**.
+Motor och KB-Whisper-modell väljs i **Inställningar** i appen. Standard är Pianissimo, med KB-Whisper Base som reserv.
 
 > **Medium och Large**: Dessa större modeller ingår inte i installationen. Om du vill använda dem krävs internetanslutning vid första körning — modellen laddas ned automatiskt.
 

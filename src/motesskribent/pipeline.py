@@ -43,7 +43,7 @@ class PipelineConfig:
     initial_prompt: str | None = None
     speed_profile: str = "balanced"
     audio_source: str | None = None
-    provider: str = "kb-whisper"
+    provider: str = "pianissimo"
 
 
 @dataclass
@@ -59,6 +59,7 @@ class PipelineResult:
     md_content: str | None = None
     warnings: list[str] = field(default_factory=list)
     engine: str = "kb-whisper"
+    model_name: str = ""
 
 
 def _assign_speakers(
@@ -139,7 +140,12 @@ def run_pipeline(
 
     from motesskribent.audio.preprocessor import preprocess_audio
     from motesskribent.output.formatter import merge_short_segments, to_docx, to_json, to_markdown
-    from motesskribent.transcription.providers import TranscriptionOptions, get_provider
+    from motesskribent.transcription.providers import (
+        FALLBACK_PROVIDER,
+        TranscriptionOptions,
+        fallback_warning,
+        get_provider,
+    )
 
     audio_path = Path(audio_path)
     if not audio_path.exists():
@@ -258,7 +264,7 @@ def run_pipeline(
             _progress("transcription", mapped, f"segment {segment_index}/~{estimated_total}")
 
     def _run_transcription():
-        nonlocal trans_result
+        nonlocal trans_result, provider
         t = time.perf_counter()
 
         options = TranscriptionOptions(
@@ -273,8 +279,22 @@ def run_pipeline(
             batch_size=config.batch_size,
         )
 
+        try:
+            trans_result = _transcribe_all(provider, options)
+        except Exception as e:
+            if provider.id == FALLBACK_PROVIDER:
+                raise
+            logger.warning("%s misslyckades, använder %s", provider.id, FALLBACK_PROVIDER, exc_info=True)
+            fallback = get_provider(FALLBACK_PROVIDER)
+            warnings.append(fallback_warning(provider, fallback, e))
+            provider = fallback
+            trans_result = _transcribe_all(provider, options)
+        return time.perf_counter() - t
+
+    def _transcribe_all(prov, options):
+        """Transkribera med en leverantör: per kanal för stereo, annars mono."""
         def transcribe(path, progress_callback):
-            return provider.transcribe(path, options, progress_callback=progress_callback)
+            return prov.transcribe(path, options, progress_callback=progress_callback)
 
         if use_channel_diarization:
             # Transkribera varje kanal separat för att inte tappa systemljud
@@ -309,19 +329,16 @@ def run_pipeline(
             # Fallback: om båda kanalerna ger 0 segment, prova mono-filen
             if not mic_result.segments and not system_result.segments:
                 logger.warning("Båda kanalerna tomma, faller tillbaka till mono")
-                trans_result = transcribe(
+                return transcribe(
                     preprocessed.audio_path,
                     progress_callback=_on_transcription_progress,
                 )
-            else:
-                from motesskribent.diarization.channel_diarizer import merge_channel_transcriptions
-                trans_result = merge_channel_transcriptions(mic_result, system_result)
-        else:
-            trans_result = transcribe(
-                preprocessed.audio_path,
-                progress_callback=_on_transcription_progress,
-            )
-        return time.perf_counter() - t
+            from motesskribent.diarization.channel_diarizer import merge_channel_transcriptions
+            return merge_channel_transcriptions(mic_result, system_result)
+        return transcribe(
+            preprocessed.audio_path,
+            progress_callback=_on_transcription_progress,
+        )
 
     if skip_diarization or use_channel_diarization:
         breakdown["diarization"] = _run_diarization()
@@ -366,7 +383,7 @@ def run_pipeline(
         "duration": preprocessed.duration_original,
         "num_speakers": num_speakers,
         "processing_time": time.perf_counter() - pipeline_start,
-        "model_name": str(config.model_path),
+        "model_name": trans_result.model_name,
         "version": "0.2.0",
         "audio_source": config.audio_source,
     }
@@ -416,4 +433,5 @@ def run_pipeline(
         md_content=md_content,
         warnings=warnings,
         engine=provider.id,
+        model_name=trans_result.model_name,
     )
