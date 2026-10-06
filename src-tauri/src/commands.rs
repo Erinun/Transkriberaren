@@ -1,10 +1,11 @@
 use crate::audio_capture::{self, RecorderState, RecordingResult};
 use crate::meeting_detector::MeetingDetector;
-use crate::ollama::CancellationMap;
+use crate::llm::{self, CancellationMap};
+use crate::secrets;
 use crate::sidecar::{run_python_pipeline, TranscriptionConfig};
 use crate::sidecar_manager::SidecarManager;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[tauri::command]
 pub async fn run_transcription(
@@ -156,44 +157,153 @@ pub async fn copy_file_to(source: String, destination: String) -> Result<(), Str
         .map_err(|e| format!("Kunde inte spara filen: {}", e))
 }
 
+// ─── AI-leverantör (OpenAI-kompatibel, text → text) ──────────────────────────
+
+fn llm_endpoint(provider_id: &str, base_url: &str) -> Result<llm::Endpoint, String> {
+    let key = secrets::get_api_key(&secrets::OsKeyring, provider_id)?;
+    llm::Endpoint::new(base_url, key)
+}
+
+/// Spara (eller med tom sträng: ta bort) API-nyckeln för en leverantör.
 #[tauri::command]
-pub async fn ollama_check_health(base_url: String) -> bool {
-    crate::ollama::check_health(&base_url).await
+pub fn llm_set_api_key(provider_id: String, api_key: String) -> Result<(), String> {
+    secrets::set_api_key(&secrets::OsKeyring, &provider_id, &api_key)
+}
+
+/// Finns en sparad nyckel? Själva nyckeln lämnas aldrig ut till webbvyn.
+#[tauri::command]
+pub fn llm_has_api_key(provider_id: String) -> Result<bool, String> {
+    Ok(secrets::get_api_key(&secrets::OsKeyring, &provider_id)?.is_some())
 }
 
 #[tauri::command]
-pub async fn ollama_list_models(base_url: String) -> Result<Vec<crate::ollama::OllamaModel>, String> {
-    crate::ollama::list_models(&base_url).await
+pub fn llm_delete_api_key(provider_id: String) -> Result<(), String> {
+    secrets::delete_api_key(&secrets::OsKeyring, &provider_id)
 }
 
 #[tauri::command]
-pub async fn ollama_generate(
-    app: AppHandle,
-    model: String,
-    prompt: String,
-    request_id: String,
-    options: Option<crate::ollama::OllamaOptions>,
+pub async fn llm_list_models(provider_id: String, base_url: String) -> Result<Vec<llm::LlmModel>, String> {
+    llm::list_models(&llm_endpoint(&provider_id, &base_url)?).await
+}
+
+#[tauri::command]
+pub async fn llm_test_connection(
+    provider_id: String,
     base_url: String,
+    model: Option<String>,
+) -> Result<llm::ConnectionTest, String> {
+    let endpoint = llm_endpoint(&provider_id, &base_url)?;
+    Ok(llm::test_connection(&endpoint, model.as_deref()).await)
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct LlmGenerateOptions {
+    pub temperature: Option<f64>,
+    pub max_tokens: Option<u32>,
+}
+
+/// Strömmande generering. Text skickas som "llm-event" (token/done/error).
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn llm_generate(
+    app: AppHandle,
+    request_id: String,
+    provider_id: String,
+    base_url: String,
+    model: String,
+    system: Option<String>,
+    prompt: String,
+    options: Option<LlmGenerateOptions>,
     cancellation_map: State<'_, CancellationMap>,
 ) -> Result<String, String> {
     let cancelled = cancellation_map.register(&request_id);
-    let result = crate::ollama::generate_streaming(&app, &model, &prompt, &request_id, options, &base_url, cancelled).await;
+    let result = run_llm_generate(&app, &request_id, &provider_id, &base_url, model, system, prompt, options, cancelled).await;
     cancellation_map.remove(&request_id);
+
+    let mut event = llm::LlmEvent {
+        request_id: request_id.clone(),
+        event_type: String::new(),
+        seq: u64::MAX,
+        token: None,
+        error: None,
+        full_text: None,
+    };
+    match &result {
+        Ok(text) => {
+            event.event_type = "done".into();
+            event.full_text = Some(text.clone());
+        }
+        Err(e) => {
+            event.event_type = "error".into();
+            event.error = Some(e.clone());
+        }
+    }
+    let _ = app.emit("llm-event", &event);
     result
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn run_llm_generate(
+    app: &AppHandle,
+    request_id: &str,
+    provider_id: &str,
+    base_url: &str,
+    model: String,
+    system: Option<String>,
+    prompt: String,
+    options: Option<LlmGenerateOptions>,
+    cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Result<String, String> {
+    if model.trim().is_empty() {
+        return Err("Ingen modell vald för AI-bearbetning.".into());
+    }
+    let endpoint = llm_endpoint(provider_id, base_url)?;
+    let mut messages = Vec::new();
+    if let Some(sys) = system.filter(|s| !s.trim().is_empty()) {
+        messages.push(llm::ChatMessage::system(&sys));
+    }
+    messages.push(llm::ChatMessage::user(&prompt));
+    let opts = options.unwrap_or(LlmGenerateOptions { temperature: None, max_tokens: None });
+    let req = llm::ChatRequest {
+        model: model.trim().to_string(),
+        messages,
+        temperature: Some(opts.temperature.unwrap_or(0.3)),
+        max_tokens: opts.max_tokens,
+        response_format: None,
+    };
+
+    let mut batcher = llm::TokenBatcher::default();
+    let mut seq: u64 = 0;
+    let emit_token = |seq: &mut u64, token: String| {
+        *seq += 1;
+        let _ = app.emit("llm-event", llm::LlmEvent {
+            request_id: request_id.to_string(),
+            event_type: "token".into(),
+            seq: *seq,
+            token: Some(token),
+            error: None,
+            full_text: None,
+        });
+    };
+    let text = llm::chat_stream(&endpoint, &req, cancelled, |t| {
+        if let Some(batch) = batcher.push(t) {
+            emit_token(&mut seq, batch);
+        }
+    })
+    .await?;
+    if let Some(rest) = batcher.flush() {
+        emit_token(&mut seq, rest);
+    }
+    Ok(text)
+}
+
 #[tauri::command]
-pub async fn ollama_cancel(
-    request_id: String,
-    cancellation_map: State<'_, CancellationMap>,
-) -> Result<bool, String> {
+pub async fn llm_cancel(request_id: String, cancellation_map: State<'_, CancellationMap>) -> Result<bool, String> {
     Ok(cancellation_map.cancel(&request_id))
 }
 
 #[tauri::command]
-pub async fn ollama_cancel_all(
-    cancellation_map: State<'_, CancellationMap>,
-) -> Result<(), String> {
+pub async fn llm_cancel_all(cancellation_map: State<'_, CancellationMap>) -> Result<(), String> {
     cancellation_map.cancel_all();
     Ok(())
 }

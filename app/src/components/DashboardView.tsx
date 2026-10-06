@@ -1,11 +1,12 @@
 import Logo from "./Logo";
-import type { OllamaStatus } from "../hooks/useOllama";
+import type { LlmStatus } from "../hooks/useLlm";
+import { hostOf } from "../lib/aiProviders";
 
 interface Props {
   onNavigate: (view: "recording" | "transcribe" | "history" | "settings") => void;
   sidecarReady: boolean;
   onInfoClick: () => void;
-  ollamaStatus: OllamaStatus;
+  llmStatus: LlmStatus;
 }
 
 const CARDS = [
@@ -62,7 +63,7 @@ const CARDS = [
   },
 ];
 
-export default function DashboardView({ onNavigate, sidecarReady, onInfoClick, ollamaStatus }: Props) {
+export default function DashboardView({ onNavigate, sidecarReady, onInfoClick, llmStatus }: Props) {
   return (
     <div className="flex flex-col items-center justify-center min-h-full py-8 animate-fade-in">
       {/* Logo + title */}
@@ -121,20 +122,15 @@ export default function DashboardView({ onNavigate, sidecarReady, onInfoClick, o
           </div>
         )}
         <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
-          {ollamaStatus.available === null ? (
-            <>
-              <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
-              <span>Kontrollerar Ollama...</span>
-            </>
-          ) : ollamaStatus.available ? (
+          {llmStatus.isReady ? (
             <>
               <div className="w-2 h-2 rounded-full bg-green-400" />
-              <span>Ollama aktiv ({ollamaStatus.models.length} {ollamaStatus.models.length === 1 ? "modell" : "modeller"})</span>
+              <span>AI-bearbetning: {llmStatus.preset.name} ({hostOf(llmStatus.current.baseUrl)})</span>
             </>
           ) : (
             <>
               <div className="w-2 h-2 rounded-full bg-gray-500" />
-              <span>Ollama ej ansluten</span>
+              <span>AI-bearbetning avstängd</span>
             </>
           )}
         </div>

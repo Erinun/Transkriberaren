@@ -19,6 +19,42 @@
 - `PipelineConfig.provider` och `PipelineResult.engine` har lagts till. `server.py` (warmup och transcribe) och `cli.py` (`--motor`) väljer motor, och IPC-svaren har fått fältet `engine`. Rust och frontend är oförändrade: utan `provider` används KB-Whisper, och Rust ignorerar det nya fältet.
 - **Verifiering av oförändrat beteende:** `tests/test_transcription_contract.py` skrevs och kördes **mot koden före ombyggnaden** (5/5 passerade) och sedan oförändrat mot den nya koden (5/5). Testerna låser exakt vilka argument som går till KB-Whisper i alla tre profiler, i stereoflödet per kanal och i reserven till mono, samt Markdown- och JSON-utdata. En jämförelse med riktig modell på samma ljudfil har inte gjorts, eftersom modellerna inte kan hämtas i den här miljön.
 
+## Steg 3: AI-leverantörslager (klart)
+
+**Byggt:**
+- **Rust `llm.rs`:** OpenAI-kompatibel klient.
+  - `GET {baseUrl}/models` klarar OpenAI-formatet med bara ID, en ren lista och `models: [...]`. Kontextlängd plockas upp om servern anger den (`context_length`, `max_model_len` m.fl.).
+  - Strömmande `POST {baseUrl}/chat/completions` (SSE), med reserv om servern svarar med vanligt JSON.
+  - Avbrott, och svenska felmeddelanden per HTTP-status.
+  - "Testa anslutning" provar `/models` och, om det inte stöds, ett minimalt chat-anrop med angivet modell-ID.
+- **Rust `secrets.rs`:** API-nyckeln sparas i Windows Credential Manager (`keyring`, tjänst `se.motesskribent.app`, konto `llm-api-key:<leverantör>`). Webbvyn kan spara, ta bort och fråga *om* en nyckel finns, men aldrig läsa den. `Endpoint` döljer nyckeln i `Debug`, och felmeddelanden innehåller den aldrig.
+- **Ollama-kopplingen är borttagen:** `ollama.rs`, `useOllama.ts` och kommandona `ollama_*`.
+  - Promptmallarna finns kvar och körs nu mot vald AI-leverantör, med svensk systeminstruktion.
+  - Gamla Ollama-inställningar flyttas till leverantören "Egen server" med `…/v1`. Den är **avstängd** tills användaren aktiverar den.
+  - Sparade resultat i historiken läses som förut.
+- **Inställningar → AI-bearbetning:**
+  - Kryssruta "Aktivera" (avstängd från början).
+  - Leverantör: Berget AI (`https://api.berget.ai/v1`, förslag `google/gemma-4-31B-it`) eller egen server.
+  - API-nyckel, modellista eller modell-ID för hand, testknapp och genereringsparametrar.
+  - En gul ruta säger att transkriptets text skickas till `<värd>`, att ljud aldrig skickas och att inget skickas förrän man klickar på Bearbeta.
+- **Resultatvyn** visar leverantör, modell och mottagande värd intill Bearbeta-knappen. **Dashboarden** visar "AI-bearbetning: Berget AI (api.berget.ai)" eller "avstängd".
+- **Inga automatiska nätverksanrop:** den gamla hälsokontrollen mot Ollama vid start är borttagen. Anrop sker bara när användaren klickar Hämta modellista, Testa anslutning eller Bearbeta.
+
+**Verifierat genom körning här:**
+- Rust: 32 tester passerar, varav 20 nya. De körs mot en lokal testserver och kontrollerar Bearer-header, att header saknas utan nyckel, modellistan, felmappning, SSE-strömning, JSON-reserv, avbrott, testanslutningens reserv, URL-validering, att nyckeln är dold i Debug och nyckellagring per leverantör.
+- Clippy med `-D warnings` är rent.
+- Frontend: `tsc` och `vite build` passerar.
+- Python: 188 tester passerar (oförändrat).
+
+**Inte verifierat:**
+- Anrop mot Berget AI, eftersom `api.berget.ai` är blockerad i den här miljön.
+- Windows Credential Manager. Här körs `keyring`s minneslager, och nyckelhanteringen är testad mot ett eget testlager.
+- Gränssnittet i en körande app.
+
+**Att veta:**
+- Kontextfönstret hanterades förut genom att höja `num_ctx` i Ollama. Det finns inte i OpenAI-API:t. Långa transkript hanteras i steg 4 genom uppdelning.
+- Användare som hade Ollama igång behöver kryssa i "Aktivera" en gång efter uppdateringen.
+
 ## Steg 2b: fjärrdeltagare i inspelningar (klart)
 
 **Byggt:**
@@ -87,7 +123,7 @@ Allt det kräver Windows eller modellåtkomst. Kör `bench_asr.py` (bilaga A) oc
 | 1 ✓ | Leverantörsgränssnitt + KB-Whisper |
 | 2 ✓ | Pianissimo som standardmotor med reserv |
 | 2b ✓ | Röstbaserad talarseparering av fjärrdeltagare i inspelningar |
-| 3 | AI-leverantörslager (OpenAI-kompatibelt, Berget AI förvalt, nyckel i nyckelförvaringen). **Ersätter Ollama-kopplingen.** Ingen modell behöver laddas ner, bara URL och API-nyckel. |
+| 3 ✓ | AI-leverantörslager som ersätter Ollama |
 | 4 | Mötesanteckningar. Sparas som filer på disk om historiken i `localStorage` inte räcker. |
 | 5 | Fjärrtranskribering |
 | 6 | Inställningssidan |

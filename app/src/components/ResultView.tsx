@@ -5,13 +5,13 @@ import ReactMarkdown from "react-markdown";
 import { generateDocxBase64 } from "../lib/generateDocx";
 import { engineLabel } from "../lib/engines";
 import type { TranscriptionSegment } from "../hooks/usePipeline";
-import type { OllamaResult } from "../hooks/useHistory";
-import { useOllama, type OllamaStatus, type OllamaOptions } from "../hooks/useOllama";
+import type { AiResult } from "../hooks/useHistory";
+import { useLlm, type LlmStatus } from "../hooks/useLlm";
+import { hostOf } from "../lib/aiProviders";
 import { usePromptTemplates } from "../hooks/usePromptTemplates";
 import CustomSelect from "./CustomSelect";
 import {
   buildPrompt,
-  estimateTokenCount,
   type PromptTemplate,
 } from "../data/promptTemplates";
 
@@ -36,14 +36,14 @@ interface Props {
   engine?: string | null;
   wordCount: number;
   onRetranscribe?: () => void;
-  ollamaStatus: OllamaStatus;
-  onOllamaComplete?: (result: OllamaResult) => void;
-  savedOllamaResults?: OllamaResult[];
-  ollamaActiveRef?: React.MutableRefObject<boolean>;
+  llmStatus: LlmStatus;
+  onAiComplete?: (result: AiResult) => void;
+  savedAiResults?: AiResult[];
+  aiActiveRef?: React.MutableRefObject<boolean>;
 }
 
 type ViewMode = "transcription" | "segment";
-type ContentView = "transcription" | "ollama";
+type ContentView = "transcription" | "ai";
 
 function formatTime(seconds: number): string {
   const total = Math.round(seconds);
@@ -64,11 +64,6 @@ function extractModelShortName(modelName: string | null): string {
   // "KBLab/kb-whisper-small" -> "kb-whisper-small"
   const parts = modelName.split("/");
   return parts[parts.length - 1];
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1e9) return `${(bytes / 1e6).toFixed(0)} MB`;
-  return `${(bytes / 1e9).toFixed(1)} GB`;
 }
 
 function renderMarkdown(content: string) {
@@ -125,46 +120,46 @@ export default function ResultView({
   engine,
   wordCount,
   onRetranscribe,
-  ollamaStatus,
-  onOllamaComplete,
-  savedOllamaResults,
-  ollamaActiveRef,
+  llmStatus,
+  onAiComplete,
+  savedAiResults,
+  aiActiveRef,
 }: Props) {
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("transcription");
   const [contentView, setContentView] = useState<ContentView>(
-    () => (savedOllamaResults && savedOllamaResults.length > 0) ? "ollama" : "transcription"
+    () => (savedAiResults && savedAiResults.length > 0) ? "ai" : "transcription"
   );
   const [fontSize, setFontSize] = useState(14);
   const [showTimestamps, setShowTimestamps] = useState(true);
 
-  // Ollama state (declared early so useEffects below can reference it)
-  const ollama = useOllama(ollamaStatus);
+  // AI state (declared early so useEffects below can reference it)
+  const ai = useLlm(llmStatus);
 
-  // Sync ollama generating state to App-level ref for meeting-detected guard
+  // Sync AI generating state to App-level ref for meeting-detected guard
   useEffect(() => {
-    if (ollamaActiveRef) ollamaActiveRef.current = ollama.generating;
-    return () => { if (ollamaActiveRef) ollamaActiveRef.current = false; };
-  }, [ollama.generating, ollamaActiveRef]);
+    if (aiActiveRef) aiActiveRef.current = ai.generating;
+    return () => { if (aiActiveRef) aiActiveRef.current = false; };
+  }, [ai.generating, aiActiveRef]);
 
-  // Saved ollama result viewing (for history entries)
-  const [viewingSavedResult, setViewingSavedResult] = useState<OllamaResult | null>(
-    () => savedOllamaResults?.[0] ?? null,
+  // Saved AI result viewing (for history entries)
+  const [viewingSavedResult, setViewingSavedResult] = useState<AiResult | null>(
+    () => savedAiResults?.[0] ?? null,
   );
 
   // Sync viewingSavedResult and contentView when switching between history entries
-  // Skip view reset if Ollama generation is actively in progress or has unsaved text
+  // Skip view reset if AI generation is actively in progress or has unsaved text
   useEffect(() => {
-    const hasSaved = savedOllamaResults && savedOllamaResults.length > 0;
+    const hasSaved = savedAiResults && savedAiResults.length > 0;
     if (hasSaved) {
-      setViewingSavedResult(savedOllamaResults[0]);
-      setContentView("ollama");
-    } else if (!ollama.generating && !ollama.streamedText && !ollama.error) {
+      setViewingSavedResult(savedAiResults[0]);
+      setContentView("ai");
+    } else if (!ai.generating && !ai.streamedText && !ai.error) {
       setViewingSavedResult(null);
       setContentView("transcription");
     }
-  }, [savedOllamaResults, ollama.generating, ollama.streamedText, ollama.error]);
+  }, [savedAiResults, ai.generating, ai.streamedText, ai.error]);
 
   // Track generating→done transition to auto-save
   const wasGeneratingRef = useRef(false);
@@ -182,22 +177,22 @@ export default function ResultView({
   }, [allTemplates, selectedTemplate.id]);
   // Detect generating→done and save result
   useEffect(() => {
-    if (ollama.generating) {
+    if (ai.generating) {
       wasGeneratingRef.current = true;
       generatingTemplateRef.current = selectedTemplate;
-    } else if (wasGeneratingRef.current && ollama.streamedText && !ollama.error) {
+    } else if (wasGeneratingRef.current && ai.streamedText && !ai.error) {
       wasGeneratingRef.current = false;
-      if (onOllamaComplete && ollama.selectedModel) {
-        onOllamaComplete({
+      if (onAiComplete) {
+        onAiComplete({
           templateId: generatingTemplateRef.current.id,
           templateName: generatingTemplateRef.current.name,
-          ollamaModel: ollama.selectedModel,
-          content: ollama.streamedText,
+          model: ai.current.model,
+          content: ai.streamedText,
           generatedAt: new Date().toISOString(),
         });
       }
     }
-  }, [ollama.generating]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ai.generating]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [customPrompt, setCustomPrompt] = useState("");
   const [extraContext, setExtraContext] = useState("");
@@ -253,13 +248,13 @@ export default function ResultView({
 
   const handleSaveDocx = async () => {
     const content =
-      contentView === "ollama"
-        ? (ollama.streamedText || viewingSavedResult?.content)
+      contentView === "ai"
+        ? (ai.streamedText || viewingSavedResult?.content)
         : mdContent;
     if (!content) return;
 
     const defaultName =
-      contentView === "ollama"
+      contentView === "ai"
         ? `${(viewingSavedResult?.templateName ?? selectedTemplate.name).toLowerCase().replace(/\s+/g, "_")}.docx`
         : "transkribering.docx";
     try {
@@ -280,8 +275,8 @@ export default function ResultView({
 
   const handleCopy = async () => {
     const textToCopy =
-      contentView === "ollama" && (ollama.streamedText || viewingSavedResult?.content)
-        ? (ollama.streamedText || viewingSavedResult?.content)
+      contentView === "ai" && (ai.streamedText || viewingSavedResult?.content)
+        ? (ai.streamedText || viewingSavedResult?.content)
         : mdContent;
     if (!textToCopy) return;
     try {
@@ -301,13 +296,8 @@ export default function ResultView({
       extraContext,
       selectedTemplate.isCustom ? customPrompt : undefined,
     );
-    let options: OllamaOptions | undefined;
-    try {
-      const raw = localStorage.getItem("motesskribent-ollama-options");
-      if (raw) options = JSON.parse(raw);
-    } catch {}
-    ollama.generate(prompt, options);
-    setContentView("ollama");
+    ai.generate(prompt);
+    setContentView("ai");
   };
 
   if (status === "error") {
@@ -385,45 +375,45 @@ export default function ResultView({
       <div className="flex flex-1 min-h-0">
         {/* Main content area */}
         <div className="flex-1 overflow-y-auto p-5" style={{ fontSize }}>
-          {contentView === "ollama" ? (
+          {contentView === "ai" ? (
             <div className="space-y-3">
               <div className="flex items-center gap-2 mb-4">
                 <h3 className="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wide">
-                  {ollama.streamedText
+                  {ai.streamedText
                     ? selectedTemplate.name
                     : viewingSavedResult?.templateName ?? selectedTemplate.name}
                 </h3>
-                {ollama.generating && (
+                {ai.generating && (
                   <div className="w-2 h-2 rounded-full bg-[var(--color-primary)] animate-glow-pulse" />
                 )}
               </div>
               {/* Saved result dropdown (when multiple saved and no active generation) */}
-              {!ollama.streamedText && !ollama.generating && savedOllamaResults && savedOllamaResults.length > 1 && (
+              {!ai.streamedText && !ai.generating && savedAiResults && savedAiResults.length > 1 && (
                 <CustomSelect
                   value={viewingSavedResult?.templateId ?? ""}
                   onChange={(v) => {
-                    const r = savedOllamaResults.find((r) => r.templateId === v);
+                    const r = savedAiResults.find((r) => r.templateId === v);
                     if (r) setViewingSavedResult(r);
                   }}
-                  options={savedOllamaResults.map((r) => ({
+                  options={savedAiResults.map((r) => ({
                     value: r.templateId,
                     label: r.templateName,
                   }))}
                   className="mb-2"
                 />
               )}
-              {(ollama.streamedText || viewingSavedResult?.content) ? (
+              {(ai.streamedText || viewingSavedResult?.content) ? (
                 <div className="prose prose-invert max-w-none leading-relaxed">
-                  <ReactMarkdown>{ollama.streamedText || viewingSavedResult?.content || ""}</ReactMarkdown>
+                  <ReactMarkdown>{ai.streamedText || viewingSavedResult?.content || ""}</ReactMarkdown>
                 </div>
-              ) : ollama.generating ? (
+              ) : ai.generating ? (
                 <p className="text-[var(--color-text-muted)] text-sm">
                   Genererar...
                 </p>
               ) : null}
-              {ollama.error && (
+              {ai.error && (
                 <p className="text-[var(--color-error)] text-sm">
-                  {ollama.error}
+                  {ai.error}
                 </p>
               )}
             </div>
@@ -506,7 +496,7 @@ export default function ResultView({
                 Segment
               </button>
             </div>
-            {contentView === "ollama" && (
+            {contentView === "ai" && (
               <button
                 onClick={() => setContentView("transcription")}
                 className="mt-2 w-full px-3 py-1.5 rounded-lg text-xs glass hover:bg-white/5 transition-colors text-[var(--color-text-muted)]"
@@ -514,9 +504,9 @@ export default function ResultView({
                 Visa transkribering
               </button>
             )}
-            {(ollama.streamedText || (savedOllamaResults && savedOllamaResults.length > 0)) && contentView === "transcription" && (
+            {(ai.streamedText || (savedAiResults && savedAiResults.length > 0)) && contentView === "transcription" && (
               <button
-                onClick={() => setContentView("ollama")}
+                onClick={() => setContentView("ai")}
                 className="mt-2 w-full px-3 py-1.5 rounded-lg text-xs glass hover:bg-white/5 transition-colors text-[var(--color-text-muted)]"
               >
                 Visa bearbetning
@@ -539,7 +529,7 @@ export default function ResultView({
                   {saving ? "Sparar..." : "Spara som\u2026"}
                 </button>
               )}
-              {(mdContent || ollama.streamedText || viewingSavedResult?.content) && (
+              {(mdContent || ai.streamedText || viewingSavedResult?.content) && (
                 <button
                   onClick={handleSaveDocx}
                   disabled={saving}
@@ -548,7 +538,7 @@ export default function ResultView({
                   {saving ? "Sparar..." : "Spara som Word\u2026"}
                 </button>
               )}
-              {(mdContent || ollama.streamedText) && (
+              {(mdContent || ai.streamedText) && (
                 <button
                   onClick={handleCopy}
                   className="w-full px-3 py-2 rounded-lg glass hover:bg-white/5 text-xs transition-colors"
@@ -621,31 +611,17 @@ export default function ResultView({
             </div>
           )}
 
-          {/* Ollama section */}
+          {/* AI section */}
           <div>
             <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wide mb-2">
               Bearbeta transkribering
             </p>
 
-            {ollama.available === false ? (
+            {!ai.isReady ? (
               <div className="p-3 rounded-lg glass text-xs text-[var(--color-text-muted)] space-y-1">
-                <p>Ollama inte tillgänglig.</p>
-                <p>
-                  Installera{" "}
-                  <span className="text-[var(--color-primary)]">ollama.com</span>{" "}
-                  och starta tjänsten.
-                </p>
-                <button
-                  onClick={ollama.refreshModels}
-                  className="mt-2 text-[var(--color-primary)] hover:underline"
-                >
-                  Försök igen
-                </button>
+                <p>AI-bearbetning är inte aktiverad.</p>
+                <p>Välj leverantör, API-nyckel och modell under Inställningar → AI-bearbetning.</p>
               </div>
-            ) : ollama.available === null ? (
-              <p className="text-xs text-[var(--color-text-muted)]">
-                Kontrollerar Ollama...
-              </p>
             ) : (
               <div className="space-y-3">
                 {/* Prompt template */}
@@ -712,57 +688,17 @@ export default function ResultView({
                   )}
                 </div>
 
-                {/* Model selector */}
-                <div>
-                  <label className="text-xs text-[var(--color-text-muted)] block mb-1">
-                    LLM-modell
-                  </label>
-                  <CustomSelect
-                    value={ollama.selectedModel ?? ""}
-                    onChange={(v) => ollama.selectModel(v)}
-                    options={ollama.models.map((m) => ({
-                      value: m.name,
-                      label: `${m.name} (${formatFileSize(m.size)})`,
-                    }))}
-                  />
-                </div>
-
-                {/* Context window warning */}
-                {mdContent && (() => {
-                  const prompt = buildPrompt(
-                    selectedTemplate,
-                    mdContent,
-                    extraContext,
-                    selectedTemplate.isCustom ? customPrompt : undefined,
-                  );
-                  const estTokens = estimateTokenCount(prompt);
-                  let numCtx = 8192;
-                  let numPredict = 4096;
-                  try {
-                    const raw = localStorage.getItem("motesskribent-ollama-options");
-                    if (raw) {
-                      const parsed = JSON.parse(raw);
-                      if (parsed.num_ctx) numCtx = parsed.num_ctx;
-                      if (parsed.num_predict) numPredict = parsed.num_predict;
-                    }
-                  } catch {}
-
-                  if (estTokens + numPredict > numCtx) {
-                    return (
-                      <div className="p-2 rounded-lg text-[10px] text-yellow-200 bg-yellow-500/10 border border-yellow-500/20">
-                        Transkriberingen ar cirka {estTokens.toLocaleString("sv-SE")} tokens
-                        men kontextfonstret ar {numCtx.toLocaleString("sv-SE")}.
-                        Kontextfonstret hojs automatiskt, men det kan krava mer RAM.
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
+                {/* Provider info */}
+                <p className="text-[10px] text-[var(--color-text-muted)]">
+                  {ai.preset.name} · {ai.current.model}
+                  <br />
+                  Texten skickas till {hostOf(ai.current.baseUrl)} när du klickar på Bearbeta. Ljud skickas aldrig.
+                </p>
 
                 {/* Generate / Cancel button */}
-                {ollama.generating ? (
+                {ai.generating ? (
                   <button
-                    onClick={() => ollama.cancel()}
+                    onClick={() => ai.cancel()}
                     className="w-full px-3 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-xs transition-all hover:shadow-[0_0_20px_rgba(220,38,38,0.25)] flex items-center justify-center gap-2"
                   >
                     <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -774,7 +710,6 @@ export default function ResultView({
                   <button
                     onClick={handleGenerate}
                     disabled={
-                      !ollama.selectedModel ||
                       !mdContent ||
                       (selectedTemplate.isCustom && !customPrompt.trim())
                     }

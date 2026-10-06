@@ -13,8 +13,8 @@ import HistoryView from "./components/HistoryView";
 import { ToastProvider, useToast } from "./components/Toast";
 import UpdateChecker from "./components/UpdateChecker";
 import { usePipeline, type PipelineSettings } from "./hooks/usePipeline";
-import { useHistory, type HistoryEntry, type OllamaResult } from "./hooks/useHistory";
-import { useOllamaStatus } from "./hooks/useOllama";
+import { useHistory, type HistoryEntry, type AiResult } from "./hooks/useHistory";
+import { useLlmStatus } from "./hooks/useLlm";
 import { useRecorder } from "./hooks/useRecorder";
 import { useAudioLevel } from "./hooks/useAudioLevel";
 import { DEFAULT_ENGINE, normalizeEngine, syncEnginePreference } from "./lib/engines";
@@ -99,15 +99,10 @@ function AppInner() {
   const [infoOpen, setInfoOpen] = useState(false);
   const pipeline = usePipeline();
   const history = useHistory();
-  const ollamaStatus = useOllamaStatus();
+  const llmStatus = useLlmStatus();
   const recorder = useRecorder();
   const isRecordingActive = recorder.status === "recording" || recorder.status === "paused";
   const audioLevels = useAudioLevel(isRecordingActive);
-
-  // Check Ollama health on mount
-  useEffect(() => {
-    ollamaStatus.checkHealth();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keep Rust's startup engine in sync with the saved setting
   useEffect(() => {
@@ -139,7 +134,7 @@ function AppInner() {
   // Track viewing a history entry
   const [viewingHistory, setViewingHistory] = useState<HistoryEntry | null>(null);
 
-  // Track the current history entry ID (for saving ollama results)
+  // Track the current history entry ID (for saving AI results)
   const [currentEntryId, setCurrentEntryId] = useState<string | null>(null);
 
   // Track where the transcription was started from (for back navigation)
@@ -151,10 +146,10 @@ function AppInner() {
   const toastShownRef = useRef(false);
   // Track whether pipeline was started in this session (robust against view changes during processing)
   const pipelineActiveRef = useRef(false);
-  // TODO: Framtida refaktor — ersätt pipelineActiveRef + ollamaActiveRef med en
+  // TODO: Framtida refaktor — ersätt pipelineActiveRef + aiActiveRef med en
   // gemensam "busyRef" som varje långkörande flöde opt-inar till, istället för
   // att meeting-detected-lyssnaren måste känna till varje flöde individuellt.
-  const ollamaActiveRef = useRef(false);
+  const aiActiveRef = useRef(false);
 
   // Listen for sidecar status events
   useEffect(() => {
@@ -188,9 +183,9 @@ function AppInner() {
     let cancelled = false;
     listen("meeting-detected", () => {
       if (cancelled) return;
-      console.log("[DIAG] meeting-detected event fired, activeView:", activeView, "pipelineActive:", pipelineActiveRef.current, "ollamaActive:", ollamaActiveRef.current);
-      // Don't navigate away while pipeline or Ollama processing is actively running
-      if (pipelineActiveRef.current || ollamaActiveRef.current) return;
+      console.log("[DIAG] meeting-detected event fired, activeView:", activeView, "pipelineActive:", pipelineActiveRef.current, "aiActive:", aiActiveRef.current);
+      // Don't navigate away while pipeline or AI processing is actively running
+      if (pipelineActiveRef.current || aiActiveRef.current) return;
       setActiveView("recording");
     }).then((fn) => {
       if (cancelled) fn(); else unlisten = fn;
@@ -260,9 +255,9 @@ function AppInner() {
     setActiveView("result");
   };
 
-  const handleOllamaComplete = (result: OllamaResult) => {
+  const handleAiComplete = (result: AiResult) => {
     if (currentEntryId) {
-      history.saveOllamaResult(currentEntryId, result);
+      history.saveAiResult(currentEntryId, result);
     }
     showToast("Bearbetning klar!", "success");
   };
@@ -388,7 +383,7 @@ function AppInner() {
               onNavigate={setActiveView}
               sidecarReady={sidecarReady}
               onInfoClick={() => setInfoOpen(true)}
-              ollamaStatus={ollamaStatus}
+              llmStatus={llmStatus}
             />
           )}
           {activeView === "transcribe" && (
@@ -420,17 +415,17 @@ function AppInner() {
           {activeView === "result" && (
             <ResultView
               {...resultProps}
-              ollamaStatus={ollamaStatus}
-              onOllamaComplete={handleOllamaComplete}
-              ollamaActiveRef={ollamaActiveRef}
-              savedOllamaResults={
+              llmStatus={llmStatus}
+              onAiComplete={handleAiComplete}
+              aiActiveRef={aiActiveRef}
+              savedAiResults={
                 currentEntryId
                   ? history.entries.find((e) => e.id === currentEntryId)?.ollamaResults
                   : undefined
               }
             />
           )}
-          {activeView === "settings" && <SettingsView ollamaStatus={ollamaStatus} />}
+          {activeView === "settings" && <SettingsView llmStatus={llmStatus} />}
           {activeView === "recording" && (
             <RecordingView
               onRecordingComplete={handleRecordingComplete}

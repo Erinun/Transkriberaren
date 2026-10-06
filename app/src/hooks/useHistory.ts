@@ -1,10 +1,11 @@
 import { useState, useCallback } from "react";
 import type { PipelineSummary } from "./usePipeline";
 
-export interface OllamaResult {
+export interface AiResult {
   templateId: string;
   templateName: string;
-  ollamaModel: string;
+  /** Modell-ID hos AI-leverantören. */
+  model: string;
   content: string;
   generatedAt: string;
 }
@@ -18,7 +19,8 @@ export interface HistoryEntry {
   modelName?: string | null;
   engine?: string | null;
   wordCount?: number;
-  ollamaResults?: OllamaResult[];
+  /** AI-resultat per promptmall. (Fältnamnet är kvar från Ollama-tiden för att äldre historik ska läsas.) */
+  ollamaResults?: AiResult[];
 }
 
 const STORAGE_KEY = "motesskribent-history";
@@ -27,7 +29,16 @@ const MAX_ENTRIES = 5;
 function loadEntries(): HistoryEntry[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const entries: HistoryEntry[] = JSON.parse(raw);
+      // Äldre poster sparade modellen som "ollamaModel"
+      for (const e of entries) {
+        for (const r of (e.ollamaResults ?? []) as (AiResult & { ollamaModel?: string })[]) {
+          if (!r.model && r.ollamaModel) r.model = r.ollamaModel;
+        }
+      }
+      return entries;
+    }
   } catch {}
   return [];
 }
@@ -90,7 +101,7 @@ export function useHistory() {
     });
   }, []);
 
-  const saveOllamaResult = useCallback((entryId: string, result: OllamaResult) => {
+  const saveAiResult = useCallback((entryId: string, result: AiResult) => {
     setEntries((prev) => {
       const next = prev.map((entry) => {
         if (entry.id !== entryId) return entry;
@@ -107,5 +118,5 @@ export function useHistory() {
     });
   }, []);
 
-  return { entries, addEntry, removeEntry, saveOllamaResult };
+  return { entries, addEntry, removeEntry, saveAiResult };
 }
