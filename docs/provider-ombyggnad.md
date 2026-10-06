@@ -2,6 +2,23 @@
 
 *Datum: 2026-10-06. Gren: `claude/friendly-goodall-eb8ran` (samma commit som `main`, `5811da9`, v0.6.1). Arbetskatalogen var ren före och efter kartläggningen. Inga filer utom den här rapporten har ändrats.*
 
+## Beslut (2026-10-06)
+
+| Fråga | Beslut |
+|---|---|
+| 2. Provet | Du kör `bench_asr.py` på din dator. |
+| 3. Ollama | Det nya OpenAI-kompatibla AI-lagret **ersätter** Ollama-kopplingen. Det ska gå att använda direkt med Berget AI:s URL och en API-nyckel, utan att ladda ner någon modell. |
+| 4. Storlek | Cirka +0,6 GB för Pianissimo är godkänt. |
+| 5. Lagring | Spara möten som filer på disk om det inte går att lösa på annat sätt. |
+| 1. Talarseparering | Svar: "nej, bygg med det nya". Tolkningen behöver bekräftas (se rapporten för steg 1). |
+| 6–10 | Ej besvarade. Planens förslag gäller tills vidare: ordningen 1, 2, AI-lager, anteckningar, fjärrtranskribering, inställningar, och AI-logiken i Rust. |
+
+## Steg 1: leverantörsgränssnitt (klart)
+
+- `src/motesskribent/transcription/providers/` innehåller `TranscriptionProvider` (`load`, `transcribe`), `TranscriptionOptions`, ett register (`get_provider`, standard `kb-whisper`) och `KbWhisperProvider`, som omsluter dagens `transcriber.transcribe()` oförändrad.
+- `PipelineConfig.provider` och `PipelineResult.engine` har lagts till. `server.py` (warmup och transcribe) och `cli.py` (`--motor`) väljer motor, och IPC-svaren har fått fältet `engine`. Rust och frontend är oförändrade: utan `provider` används KB-Whisper, och Rust ignorerar det nya fältet.
+- **Verifiering av oförändrat beteende:** `tests/test_transcription_contract.py` skrevs och kördes **mot koden före ombyggnaden** (5/5 passerade) och sedan oförändrat mot den nya koden (5/5). Testerna låser exakt vilka argument som går till KB-Whisper i alla tre profiler, i stereoflödet per kanal och i reserven till mono, samt Markdown- och JSON-utdata. En jämförelse med riktig modell på samma ljudfil har inte gjorts, eftersom modellerna inte kan hämtas i den här miljön.
+
 ## Sammanfattning
 
 - Grunden stämmer med din beskrivning: Tauri 2, Python-sidecar, faster-whisper med KB-Whisper och WASAPI loopback. **Tre saker skiljer sig dock på sätt som påverkar planen:**

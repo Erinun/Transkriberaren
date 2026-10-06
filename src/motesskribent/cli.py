@@ -72,6 +72,7 @@ def _run_json_ipc(audio_file: Path, config):
             "md_content": result.md_content,
             "warnings": result.warnings,
             "model_name": str(config.model_path),
+            "engine": result.engine,
             "word_count": sum(len(seg.text.split()) for seg in result.segments),
             "segments": [
                 {
@@ -102,6 +103,7 @@ def _run_json_ipc(audio_file: Path, config):
 
 @main.command()
 @click.argument("audio_file", type=click.Path(exists=True, path_type=Path))
+@click.option("--motor", default="kb-whisper", help="Transkriberingsmotor (default: kb-whisper).")
 @click.option("--modell", default="KBLab/kb-whisper-base", help="Whisper-modell att använda.")
 @click.option("--talare", type=int, default=None, help="Antal talare (auto om ej angivet).")
 @click.option("--format", "formats", multiple=True, default=["markdown", "json"],
@@ -114,7 +116,7 @@ def _run_json_ipc(audio_file: Path, config):
 @click.option("--speed-profile", type=click.Choice(["fast", "balanced", "quality"]),
               default="balanced", help="Hastighetsprofil (default: balanced).")
 @click.option("--json-ipc", is_flag=True, help="JSON-output för IPC (används av GUI).")
-def transkribera(audio_file: Path, modell: str, talare: int | None,
+def transkribera(audio_file: Path, motor: str, modell: str, talare: int | None,
                  formats: tuple[str, ...], output: Path, prompt: str | None,
                  no_vad: bool, speed_profile: str, json_ipc: bool):
     """Transkribera en ljudfil med talarseparering."""
@@ -128,6 +130,7 @@ def transkribera(audio_file: Path, modell: str, talare: int | None,
         initial_prompt=prompt,
         vad_enabled=not no_vad,
         speed_profile=speed_profile,
+        provider=motor,
     )
 
     if json_ipc:

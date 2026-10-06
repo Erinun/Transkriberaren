@@ -43,6 +43,7 @@ class PipelineConfig:
     initial_prompt: str | None = None
     speed_profile: str = "balanced"
     audio_source: str | None = None
+    provider: str = "kb-whisper"
 
 
 @dataclass
@@ -57,6 +58,7 @@ class PipelineResult:
     processing_breakdown: dict[str, float]
     md_content: str | None = None
     warnings: list[str] = field(default_factory=list)
+    engine: str = "kb-whisper"
 
 
 def _assign_speakers(
@@ -137,6 +139,7 @@ def run_pipeline(
 
     from motesskribent.audio.preprocessor import preprocess_audio
     from motesskribent.output.formatter import merge_short_segments, to_docx, to_json, to_markdown
+    from motesskribent.transcription.providers import TranscriptionOptions, get_provider
 
     audio_path = Path(audio_path)
     if not audio_path.exists():
@@ -149,6 +152,8 @@ def run_pipeline(
         config.batch_size = profile["batch_size"]
         if "word_timestamps" in profile:
             config.include_word_timestamps = profile["word_timestamps"]
+
+    provider = get_provider(config.provider)
 
     config.output_dir = Path(config.output_dir)
     config.output_dir.mkdir(parents=True, exist_ok=True)
@@ -255,10 +260,9 @@ def run_pipeline(
     def _run_transcription():
         nonlocal trans_result
         t = time.perf_counter()
-        from motesskribent.transcription.transcriber import transcribe
 
-        common_kwargs = dict(
-            model_path=config.model_path,
+        options = TranscriptionOptions(
+            model=str(config.model_path),
             language=config.language,
             beam_size=config.beam_size,
             cpu_threads=config.cpu_threads,
@@ -268,6 +272,9 @@ def run_pipeline(
             vad_filter=config.vad_enabled,
             batch_size=config.batch_size,
         )
+
+        def transcribe(path, progress_callback):
+            return provider.transcribe(path, options, progress_callback=progress_callback)
 
         if use_channel_diarization:
             # Transkribera varje kanal separat för att inte tappa systemljud
@@ -291,14 +298,12 @@ def run_pipeline(
             mic_result = transcribe(
                 preprocessed.channel_audio_paths[0],
                 progress_callback=_channel_progress,
-                **common_kwargs,
             )
             _channel_phase[0] = 1
             logger.info("Per-kanal-transkription: transkriberar system-kanal")
             system_result = transcribe(
                 preprocessed.channel_audio_paths[1],
                 progress_callback=_channel_progress,
-                **common_kwargs,
             )
 
             # Fallback: om båda kanalerna ger 0 segment, prova mono-filen
@@ -307,7 +312,6 @@ def run_pipeline(
                 trans_result = transcribe(
                     preprocessed.audio_path,
                     progress_callback=_on_transcription_progress,
-                    **common_kwargs,
                 )
             else:
                 from motesskribent.diarization.channel_diarizer import merge_channel_transcriptions
@@ -316,7 +320,6 @@ def run_pipeline(
             trans_result = transcribe(
                 preprocessed.audio_path,
                 progress_callback=_on_transcription_progress,
-                **common_kwargs,
             )
         return time.perf_counter() - t
 
@@ -412,4 +415,5 @@ def run_pipeline(
         processing_breakdown=breakdown,
         md_content=md_content,
         warnings=warnings,
+        engine=provider.id,
     )

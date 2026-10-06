@@ -22,7 +22,7 @@ pytest tests/ -m "not integration" -v
 pytest tests/test_formatter.py -v
 pytest tests/test_pipeline.py::TestAssignSpeakers -v
 
-# Standalone integration tests (require real audio + HF token)
+# Standalone integration tests (require real audio + downloaded models)
 python tests/run_transcriber_test.py <audio.wav>
 python tests/run_diarizer_test.py <audio.wav> --num-speakers 3
 
@@ -59,9 +59,9 @@ audio file → preprocessor → diarizer → transcriber → _assign_speakers �
 
 1. **preprocessor** loads audio with `soundfile.read()`, converts to mono, resamples to 16kHz with `torchaudio.functional.resample()`, runs Silero VAD for speech/silence statistics. Output: `PreprocessedAudio` with path to converted WAV.
 
-2. **diarizer** runs pyannote 3.1 pipeline on CPU. Merges short same-speaker segments, assigns labels ("Talare 1", "Talare 2") by order of first appearance. Output: `DiarizationResult` with `SpeakerSegment` list. Fails gracefully — pipeline continues without speakers.
+2. **diarizer** runs the `diarize` library (Silero VAD + WeSpeaker ONNX + spectral clustering) on CPU, no HF token. Merges short same-speaker segments, assigns labels ("Talare 1", "Talare 2") by order of first appearance. Output: `DiarizationResult` with `SpeakerSegment` list. Fails gracefully — pipeline continues without speakers. Stereo recordings (left=mic, right=system) skip it: each channel is transcribed separately and `channel_diarizer.merge_channel_transcriptions` labels mic=Talare 1, system=Talare 2.
 
-3. **transcriber** runs faster-whisper with KB-Whisper CTranslate2 models. Output: `TranscriptionResult` with `TranscribedSegment` list.
+3. **transcription provider** (`transcription/providers/`) is selected by `PipelineConfig.provider` (default `"kb-whisper"`). `KbWhisperProvider` wraps `transcriber.transcribe()` (faster-whisper with KB-Whisper CTranslate2 models). New engines subclass `TranscriptionProvider` and register in `registry.py`. Output: `TranscriptionResult` with `TranscribedSegment` list.
 
 4. **`_assign_speakers`** matches each transcription segment to the diarization segment with maximum time overlap.
 
@@ -76,7 +76,7 @@ Both transcriber and diarizer cache their models at module level to avoid reload
 - **`model.transcribe()` returns a generator** — must consume exactly once. Current code iterates and builds a list.
 - **faster-whisper word field is `probability`**, mapped to `TranscribedWord.confidence` in our dataclass.
 - **Do not use `torchaudio.load()`** on Windows — torchaudio 2.10+ requires torchcodec + FFmpeg DLLs. Use `soundfile.read()` for loading; only use `torchaudio.functional.resample()` (pure torch, no backend needed).
-- **pyannote requires HF token** + accepted model licenses for `pyannote/speaker-diarization-3.1` and `pyannote/segmentation-3.0`. Token resolved: parameter → `HF_TOKEN` env → `huggingface-cli login`.
+- **Tests patch `transcriber.transcribe` as a module attribute** — providers must call it via `transcriber.transcribe(...)`, not a `from ... import transcribe` binding. `tests/test_transcription_contract.py` locks the exact arguments the pipeline sends to KB-Whisper.
 - **Segment merging exists in two places**: `_merge_segments` in diarizer.py (SpeakerSegment) and `merge_short_segments` in formatter.py (TranscribedSegment). Different dataclass types, similar logic.
 
 ## Conventions
@@ -108,5 +108,5 @@ Both transcriber and diarizer cache their models at module level to avoid reload
 
 **Performance optimizations:**
 - Persistent sidecar keeps models in memory between transcriptions
-- Parallel model loading (whisper + pyannote) during warmup via ThreadPoolExecutor
+- Parallel model loading (transcription provider + diarize) during warmup via ThreadPoolExecutor
 - Skip diarization when `num_speakers <= 1` (saves ~10-25s)

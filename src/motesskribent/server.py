@@ -31,9 +31,11 @@ def _handle_ping(request_id: str) -> None:
 
 def _handle_warmup(request_id: str, config: dict) -> None:
     """Load models into memory. Parallelizes whisper + diarize loading."""
+    from motesskribent.transcription.providers import TranscriptionOptions, get_provider
     from motesskribent.transcription.transcriber import ModelResolutionError
 
     model = config.get("model", "KBLab/kb-whisper-base")
+    provider = get_provider(config.get("provider"))
     num_speakers = config.get("num_speakers")
     need_diarizer = num_speakers is None or num_speakers > 1
 
@@ -46,8 +48,7 @@ def _handle_warmup(request_id: str, config: dict) -> None:
     })
 
     def load_transcriber():
-        from motesskribent.transcription.transcriber import _get_model
-        _get_model(model)
+        provider.load(TranscriptionOptions(model=model))
 
     def load_diarizer():
         from motesskribent.diarization.diarizer import _warmup_models
@@ -111,6 +112,7 @@ def _handle_warmup(request_id: str, config: dict) -> None:
         "percent": 100,
         "message": "Modeller laddade",
         "diarization_available": diarizer_ok,
+        "engine": provider.id,
     })
 
 
@@ -127,6 +129,7 @@ def _handle_transcribe(request_id: str, audio_path: str, config: dict) -> None:
         vad_enabled=config.get("vad_enabled", True),
         speed_profile=config.get("speed_profile", "balanced"),
         audio_source=config.get("audio_source"),
+        provider=config.get("provider") or "kb-whisper",
     )
 
     def on_progress(step: str, fraction: float, detail: str = ""):
@@ -170,6 +173,7 @@ def _handle_transcribe(request_id: str, audio_path: str, config: dict) -> None:
         "md_content": result.md_content,
         "warnings": result.warnings,
         "model_name": str(pipeline_config.model_path),
+        "engine": result.engine,
         "word_count": sum(len(seg.text.split()) for seg in result.segments),
         "segments": [
             {
