@@ -13,10 +13,11 @@ import HistoryView from "./components/HistoryView";
 import { ToastProvider, useToast } from "./components/Toast";
 import UpdateChecker from "./components/UpdateChecker";
 import { usePipeline, type PipelineSettings } from "./hooks/usePipeline";
-import { useHistory, type HistoryEntry, type OllamaResult } from "./hooks/useHistory";
-import { useOllamaStatus } from "./hooks/useOllama";
+import { useHistory, type HistoryEntry, type AiResult } from "./hooks/useHistory";
+import { useLlmStatus } from "./hooks/useLlm";
 import { useRecorder } from "./hooks/useRecorder";
 import { useAudioLevel } from "./hooks/useAudioLevel";
+import { DEFAULT_ENGINE, normalizeEngine, syncEnginePreference } from "./lib/engines";
 
 type View = "dashboard" | "transcribe" | "history" | "processing" | "result" | "settings" | "recording";
 type SidecarStatus = "starting" | "warming_up" | "ready" | "error";
@@ -30,6 +31,7 @@ const NAV_ITEMS: { id: View; label: string }[] = [
 const STORAGE_KEY = "motesskribent-settings";
 
 function loadSettingsForRecording(): PipelineSettings {
+  let provider: string = DEFAULT_ENGINE;
   let model = "KBLab/kb-whisper-base";
   let numSpeakers: number | null = null;
   let formats = ["markdown", "json"];
@@ -47,6 +49,7 @@ function loadSettingsForRecording(): PipelineSettings {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
       }
       if (s.defaultModel) model = s.defaultModel;
+      provider = normalizeEngine(s.defaultEngine);
       if (s.defaultNumSpeakers && s.defaultNumSpeakers !== "") {
         numSpeakers = parseInt(s.defaultNumSpeakers);
       }
@@ -65,6 +68,7 @@ function loadSettingsForRecording(): PipelineSettings {
   let outputDir = "";
 
   return {
+    provider,
     model,
     numSpeakers,
     formats,
@@ -95,14 +99,26 @@ function AppInner() {
   const [infoOpen, setInfoOpen] = useState(false);
   const pipeline = usePipeline();
   const history = useHistory();
-  const ollamaStatus = useOllamaStatus();
+  const llmStatus = useLlmStatus();
   const recorder = useRecorder();
   const isRecordingActive = recorder.status === "recording" || recorder.status === "paused";
   const audioLevels = useAudioLevel(isRecordingActive);
 
-  // Check Ollama health on mount
+  // Keep Rust's startup engine in sync with the saved setting
   useEffect(() => {
-    ollamaStatus.checkHealth();
+    syncEnginePreference(normalizeEngine(recordingSettings.provider));
+  }, [recordingSettings.provider]);
+
+  // Show a warning if the chosen engine could not be loaded at startup
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+    listen<{ engine: string | null; engine_warning: string | null }>("transcription-engine-status", (event) => {
+      if (event.payload.engine_warning) showToast(event.payload.engine_warning, "info");
+    }).then((fn) => {
+      if (cancelled) fn(); else unlisten = fn;
+    });
+    return () => { cancelled = true; unlisten?.(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-start meeting detection if previously enabled
@@ -118,7 +134,7 @@ function AppInner() {
   // Track viewing a history entry
   const [viewingHistory, setViewingHistory] = useState<HistoryEntry | null>(null);
 
-  // Track the current history entry ID (for saving ollama results)
+  // Track the current history entry ID (for saving AI results)
   const [currentEntryId, setCurrentEntryId] = useState<string | null>(null);
 
   // Track where the transcription was started from (for back navigation)
@@ -130,10 +146,10 @@ function AppInner() {
   const toastShownRef = useRef(false);
   // Track whether pipeline was started in this session (robust against view changes during processing)
   const pipelineActiveRef = useRef(false);
-  // TODO: Framtida refaktor — ersätt pipelineActiveRef + ollamaActiveRef med en
+  // TODO: Framtida refaktor — ersätt pipelineActiveRef + aiActiveRef med en
   // gemensam "busyRef" som varje långkörande flöde opt-inar till, istället för
   // att meeting-detected-lyssnaren måste känna till varje flöde individuellt.
-  const ollamaActiveRef = useRef(false);
+  const aiActiveRef = useRef(false);
 
   // Listen for sidecar status events
   useEffect(() => {
@@ -167,9 +183,9 @@ function AppInner() {
     let cancelled = false;
     listen("meeting-detected", () => {
       if (cancelled) return;
-      console.log("[DIAG] meeting-detected event fired, activeView:", activeView, "pipelineActive:", pipelineActiveRef.current, "ollamaActive:", ollamaActiveRef.current);
-      // Don't navigate away while pipeline or Ollama processing is actively running
-      if (pipelineActiveRef.current || ollamaActiveRef.current) return;
+      console.log("[DIAG] meeting-detected event fired, activeView:", activeView, "pipelineActive:", pipelineActiveRef.current, "aiActive:", aiActiveRef.current);
+      // Don't navigate away while pipeline or AI processing is actively running
+      if (pipelineActiveRef.current || aiActiveRef.current) return;
       setActiveView("recording");
     }).then((fn) => {
       if (cancelled) fn(); else unlisten = fn;
@@ -220,7 +236,7 @@ function AppInner() {
     }
     if (pipeline.status === "done" && pipeline.mdContent && pipeline.summary && !historySavedRef.current) {
       historySavedRef.current = true;
-      const id = history.addEntry(currentAudioName, pipeline.mdContent, pipeline.summary, pipeline.modelName, pipeline.wordCount);
+      const id = history.addEntry(currentAudioName, pipeline.mdContent, pipeline.summary, pipeline.modelName, pipeline.wordCount, pipeline.engine);
       setCurrentEntryId(id);
       if (!toastShownRef.current) {
         toastShownRef.current = true;
@@ -239,9 +255,9 @@ function AppInner() {
     setActiveView("result");
   };
 
-  const handleOllamaComplete = (result: OllamaResult) => {
+  const handleAiComplete = (result: AiResult) => {
     if (currentEntryId) {
-      history.saveOllamaResult(currentEntryId, result);
+      history.saveAiResult(currentEntryId, result);
     }
     showToast("Bearbetning klar!", "success");
   };
@@ -260,6 +276,7 @@ function AppInner() {
         warnings: [],
         segments: [],
         modelName: viewingHistory!.modelName ?? null,
+        engine: viewingHistory!.engine ?? null,
         wordCount: viewingHistory!.wordCount ?? 0,
         onBack: () => {
           setViewingHistory(null);
@@ -275,6 +292,7 @@ function AppInner() {
         warnings: pipeline.warnings,
         segments: pipeline.segments,
         modelName: pipeline.modelName,
+        engine: pipeline.engine,
         wordCount: pipeline.wordCount,
         onBack: () => {
           pipeline.reset();
@@ -365,7 +383,7 @@ function AppInner() {
               onNavigate={setActiveView}
               sidecarReady={sidecarReady}
               onInfoClick={() => setInfoOpen(true)}
-              ollamaStatus={ollamaStatus}
+              llmStatus={llmStatus}
             />
           )}
           {activeView === "transcribe" && (
@@ -397,17 +415,17 @@ function AppInner() {
           {activeView === "result" && (
             <ResultView
               {...resultProps}
-              ollamaStatus={ollamaStatus}
-              onOllamaComplete={handleOllamaComplete}
-              ollamaActiveRef={ollamaActiveRef}
-              savedOllamaResults={
+              llmStatus={llmStatus}
+              onAiComplete={handleAiComplete}
+              aiActiveRef={aiActiveRef}
+              savedAiResults={
                 currentEntryId
                   ? history.entries.find((e) => e.id === currentEntryId)?.ollamaResults
                   : undefined
               }
             />
           )}
-          {activeView === "settings" && <SettingsView ollamaStatus={ollamaStatus} />}
+          {activeView === "settings" && <SettingsView llmStatus={llmStatus} />}
           {activeView === "recording" && (
             <RecordingView
               onRecordingComplete={handleRecordingComplete}

@@ -43,6 +43,7 @@ class PipelineConfig:
     initial_prompt: str | None = None
     speed_profile: str = "balanced"
     audio_source: str | None = None
+    provider: str = "pianissimo"
 
 
 @dataclass
@@ -57,6 +58,8 @@ class PipelineResult:
     processing_breakdown: dict[str, float]
     md_content: str | None = None
     warnings: list[str] = field(default_factory=list)
+    engine: str = "kb-whisper"
+    model_name: str = ""
 
 
 def _assign_speakers(
@@ -137,6 +140,12 @@ def run_pipeline(
 
     from motesskribent.audio.preprocessor import preprocess_audio
     from motesskribent.output.formatter import merge_short_segments, to_docx, to_json, to_markdown
+    from motesskribent.transcription.providers import (
+        FALLBACK_PROVIDER,
+        TranscriptionOptions,
+        fallback_warning,
+        get_provider,
+    )
 
     audio_path = Path(audio_path)
     if not audio_path.exists():
@@ -149,6 +158,8 @@ def run_pipeline(
         config.batch_size = profile["batch_size"]
         if "word_timestamps" in profile:
             config.include_word_timestamps = profile["word_timestamps"]
+
+    provider = get_provider(config.provider)
 
     config.output_dir = Path(config.output_dir)
     config.output_dir.mkdir(parents=True, exist_ok=True)
@@ -183,6 +194,11 @@ def run_pipeline(
         and config.num_speakers is not None
         and config.num_speakers <= 1
     )
+    # Stereo: mikrofonen är alltid Talare 1. Systemkanalen diariseras för att
+    # skilja fjärrdeltagarna åt, utom när användaren angett högst två talare.
+    diarize_system_channel = use_channel_diarization and (
+        config.num_speakers is None or config.num_speakers >= 3
+    )
     warnings: list[str] = []
     trans_result = None
 
@@ -193,9 +209,25 @@ def run_pipeline(
             logger.info("Hoppar över diarisering (num_speakers=%s)", config.num_speakers)
             num_speakers = max(config.num_speakers, 1)
             return 0.0
-        if use_channel_diarization:
+        if use_channel_diarization and not diarize_system_channel:
             logger.info("Använder kanalbaserad talarseparering (stereo-inspelning)")
             return 0.0
+
+        if use_channel_diarization:
+            logger.info("Stereo-inspelning: diariserar systemkanalen för att skilja fjärrdeltagare åt")
+            diar_audio = preprocessed.channel_audio_paths[1]
+            diar_kwargs = dict(
+                num_speakers=config.num_speakers - 1 if config.num_speakers else None,
+                min_speakers=1,
+                max_speakers=max(config.max_speakers - 1, 1),
+            )
+        else:
+            diar_audio = preprocessed.audio_path
+            diar_kwargs = dict(
+                num_speakers=config.num_speakers,
+                min_speakers=config.min_speakers,
+                max_speakers=config.max_speakers,
+            )
 
         # Heartbeat thread: emit indeterminate progress every 5s during diarization
         heartbeat_stop = threading.Event()
@@ -209,19 +241,19 @@ def run_pipeline(
 
         try:
             from motesskribent.diarization.diarizer import diarize
-            diar_result = diarize(
-                preprocessed.audio_path,
-                num_speakers=config.num_speakers,
-                min_speakers=config.min_speakers,
-                max_speakers=config.max_speakers,
-            )
+            diar_result = diarize(diar_audio, **diar_kwargs)
             diarization_segments = diar_result.segments
             num_speakers = diar_result.num_speakers
         except Exception:
             logger.warning("Diarisering misslyckades, fortsätter utan talare", exc_info=True)
             num_speakers = 1
             diarization_failed = True
-            warnings.append("Talarseparering ej tillgänglig")
+            if use_channel_diarization:
+                warnings.append(
+                    "Talarseparering av fjärrdeltagare ej tillgänglig – alla visas som Talare 2"
+                )
+            else:
+                warnings.append("Talarseparering ej tillgänglig")
         finally:
             heartbeat_stop.set()
             heartbeat_thread.join(timeout=1.0)
@@ -253,12 +285,11 @@ def run_pipeline(
             _progress("transcription", mapped, f"segment {segment_index}/~{estimated_total}")
 
     def _run_transcription():
-        nonlocal trans_result
+        nonlocal trans_result, provider
         t = time.perf_counter()
-        from motesskribent.transcription.transcriber import transcribe
 
-        common_kwargs = dict(
-            model_path=config.model_path,
+        options = TranscriptionOptions(
+            model=str(config.model_path),
             language=config.language,
             beam_size=config.beam_size,
             cpu_threads=config.cpu_threads,
@@ -268,6 +299,23 @@ def run_pipeline(
             vad_filter=config.vad_enabled,
             batch_size=config.batch_size,
         )
+
+        try:
+            trans_result = _transcribe_all(provider, options)
+        except Exception as e:
+            if provider.id == FALLBACK_PROVIDER:
+                raise
+            logger.warning("%s misslyckades, använder %s", provider.id, FALLBACK_PROVIDER, exc_info=True)
+            fallback = get_provider(FALLBACK_PROVIDER)
+            warnings.append(fallback_warning(provider, fallback, e))
+            provider = fallback
+            trans_result = _transcribe_all(provider, options)
+        return time.perf_counter() - t
+
+    def _transcribe_all(prov, options):
+        """Transkribera med en leverantör: per kanal för stereo, annars mono."""
+        def transcribe(path, progress_callback):
+            return prov.transcribe(path, options, progress_callback=progress_callback)
 
         if use_channel_diarization:
             # Transkribera varje kanal separat för att inte tappa systemljud
@@ -291,36 +339,29 @@ def run_pipeline(
             mic_result = transcribe(
                 preprocessed.channel_audio_paths[0],
                 progress_callback=_channel_progress,
-                **common_kwargs,
             )
             _channel_phase[0] = 1
             logger.info("Per-kanal-transkription: transkriberar system-kanal")
             system_result = transcribe(
                 preprocessed.channel_audio_paths[1],
                 progress_callback=_channel_progress,
-                **common_kwargs,
             )
 
             # Fallback: om båda kanalerna ger 0 segment, prova mono-filen
             if not mic_result.segments and not system_result.segments:
                 logger.warning("Båda kanalerna tomma, faller tillbaka till mono")
-                trans_result = transcribe(
+                return transcribe(
                     preprocessed.audio_path,
                     progress_callback=_on_transcription_progress,
-                    **common_kwargs,
                 )
-            else:
-                from motesskribent.diarization.channel_diarizer import merge_channel_transcriptions
-                trans_result = merge_channel_transcriptions(mic_result, system_result)
-        else:
-            trans_result = transcribe(
-                preprocessed.audio_path,
-                progress_callback=_on_transcription_progress,
-                **common_kwargs,
-            )
-        return time.perf_counter() - t
+            from motesskribent.diarization.channel_diarizer import merge_channel_transcriptions
+            return merge_channel_transcriptions(mic_result, system_result)
+        return transcribe(
+            preprocessed.audio_path,
+            progress_callback=_on_transcription_progress,
+        )
 
-    if skip_diarization or use_channel_diarization:
+    if skip_diarization or (use_channel_diarization and not diarize_system_channel):
         breakdown["diarization"] = _run_diarization()
         _progress("diarization", 0.30)
         diarization_done[0] = True
@@ -333,7 +374,8 @@ def run_pipeline(
             # Diarization typically finishes first — report progress as it completes
             breakdown["diarization"] = diar_future.result()
             _fraction_at_diar_done[0] = _last_raw_fraction[0]
-            _progress("diarization", 0.30)
+            if _last_pct[0] < 30:  # stereo: transkriberingen kan redan ha passerat 30 %
+                _progress("diarization", 0.30)
             diarization_done[0] = True
 
             breakdown["transcription"] = trans_future.result()
@@ -342,8 +384,12 @@ def run_pipeline(
 
     # 4. Matcha talare
     if use_channel_diarization:
-        # Talare redan tilldelade av merge_channel_transcriptions
+        # Talare 1/2 tilldelade av merge_channel_transcriptions; dela upp
+        # systemkanalen på flera fjärrtalare om den diariserats.
         segments = trans_result.segments
+        if diarization_segments:
+            from motesskribent.diarization.channel_diarizer import assign_system_speakers
+            segments = assign_system_speakers(segments, diarization_segments)
         num_speakers = len({s.speaker_id for s in segments if s.speaker_id})
     else:
         segments = _assign_speakers(trans_result.segments, diarization_segments)
@@ -363,7 +409,7 @@ def run_pipeline(
         "duration": preprocessed.duration_original,
         "num_speakers": num_speakers,
         "processing_time": time.perf_counter() - pipeline_start,
-        "model_name": str(config.model_path),
+        "model_name": trans_result.model_name,
         "version": "0.2.0",
         "audio_source": config.audio_source,
     }
@@ -412,4 +458,6 @@ def run_pipeline(
         processing_breakdown=breakdown,
         md_content=md_content,
         warnings=warnings,
+        engine=provider.id,
+        model_name=trans_result.model_name,
     )

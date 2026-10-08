@@ -1,14 +1,15 @@
 mod audio_capture;
 mod commands;
 mod meeting_detector;
-mod ollama;
+mod llm;
+mod secrets;
 mod sidecar;
 mod sidecar_manager;
 #[cfg(windows)]
 pub(crate) mod wasapi_loopback;
 
 use audio_capture::RecorderState;
-use commands::{copy_file_to, detect_audio_mode, get_default_output_dir, get_recording_status, list_output_devices, ollama_cancel, ollama_cancel_all, ollama_check_health, ollama_generate, ollama_list_models, open_file, pause_recording, read_file_content, resume_recording, run_transcription, set_meeting_detection, start_recording, stop_recording, write_binary_to_file, write_text_to_file};
+use commands::{copy_file_to, detect_audio_mode, get_default_output_dir, get_recording_status, list_output_devices, llm_cancel, llm_cancel_all, llm_delete_api_key, llm_generate, llm_has_api_key, llm_list_models, llm_set_api_key, llm_test_connection, open_file, pause_recording, read_file_content, resume_recording, run_transcription, set_meeting_detection, set_transcription_engine, start_recording, stop_recording, write_binary_to_file, write_text_to_file};
 use meeting_detector::MeetingDetector;
 use sidecar_manager::SidecarManager;
 use tauri::{Emitter, Manager};
@@ -32,7 +33,7 @@ pub fn run() {
         .manage(RecorderState::new())
         .manage(SidecarManager::new())
         .manage(MeetingDetector::new())
-        .manage(ollama::CancellationMap::new())
+        .manage(llm::CancellationMap::new())
         .setup(|app| {
             // --- System tray ---
             let show_item = MenuItem::with_id(app, "show", "Visa MötesSkribent", true, None::<&str>)?;
@@ -89,11 +90,18 @@ pub fn run() {
 
                 let _ = handle.emit("sidecar-status", "warming_up");
 
-                match sidecar.warmup(&handle, "KBLab/kb-whisper-base").await {
-                    Ok(diarization_available) => {
-                        log::info!("Sidecar warmup klar, diarization: {}", diarization_available);
+                let engine = commands::load_engine_preference(&handle);
+                log::info!("Transkriberingsmotor vid uppstart: {}", engine);
+
+                match sidecar.warmup(&handle, "KBLab/kb-whisper-base", &engine).await {
+                    Ok(info) => {
+                        log::info!(
+                            "Sidecar warmup klar, motor: {:?}, diarization: {}",
+                            info.engine, info.diarization_available
+                        );
                         let _ = handle.emit("sidecar-status", "ready");
-                        let _ = handle.emit("diarization-status", diarization_available);
+                        let _ = handle.emit("diarization-status", info.diarization_available);
+                        let _ = handle.emit("transcription-engine-status", &info);
                     }
                     Err(e) => {
                         log::error!("Bakgrunds-warmup misslyckades: {}", e);
@@ -117,13 +125,17 @@ pub fn run() {
             copy_file_to,
             write_binary_to_file,
             write_text_to_file,
-            ollama_check_health,
-            ollama_list_models,
-            ollama_generate,
-            ollama_cancel,
-            ollama_cancel_all,
+            llm_set_api_key,
+            llm_has_api_key,
+            llm_delete_api_key,
+            llm_list_models,
+            llm_test_connection,
+            llm_generate,
+            llm_cancel,
+            llm_cancel_all,
             set_meeting_detection,
             get_recording_status,
+            set_transcription_engine,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

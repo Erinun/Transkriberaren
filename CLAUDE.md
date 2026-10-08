@@ -22,7 +22,7 @@ pytest tests/ -m "not integration" -v
 pytest tests/test_formatter.py -v
 pytest tests/test_pipeline.py::TestAssignSpeakers -v
 
-# Standalone integration tests (require real audio + HF token)
+# Standalone integration tests (require real audio + downloaded models)
 python tests/run_transcriber_test.py <audio.wav>
 python tests/run_diarizer_test.py <audio.wav> --num-speakers 3
 
@@ -59,9 +59,9 @@ audio file → preprocessor → diarizer → transcriber → _assign_speakers �
 
 1. **preprocessor** loads audio with `soundfile.read()`, converts to mono, resamples to 16kHz with `torchaudio.functional.resample()`, runs Silero VAD for speech/silence statistics. Output: `PreprocessedAudio` with path to converted WAV.
 
-2. **diarizer** runs pyannote 3.1 pipeline on CPU. Merges short same-speaker segments, assigns labels ("Talare 1", "Talare 2") by order of first appearance. Output: `DiarizationResult` with `SpeakerSegment` list. Fails gracefully — pipeline continues without speakers.
+2. **diarizer** runs the `diarize` library (Silero VAD + WeSpeaker ONNX + spectral clustering) on CPU, no HF token. Merges short same-speaker segments, assigns labels ("Talare 1", "Talare 2") by order of first appearance. Output: `DiarizationResult` with `SpeakerSegment` list. Fails gracefully — pipeline continues without speakers. Stereo recordings (left=mic, right=system): each channel is transcribed separately and `channel_diarizer.merge_channel_transcriptions` labels mic=Talare 1, system=Talare 2; when `num_speakers` is None or ≥3 the system channel is also diarized (`num_speakers - 1` remote speakers) and `assign_system_speakers` splits system segments into Talare 2, 3, … The mic channel is never diarized.
 
-3. **transcriber** runs faster-whisper with KB-Whisper CTranslate2 models. Output: `TranscriptionResult` with `TranscribedSegment` list.
+3. **transcription provider** (`transcription/providers/`) is selected by `PipelineConfig.provider`. Default is `"pianissimo"` (`PianissimoProvider`: KlangAI/pianissimo-sv-onnx int8 via onnx-asr + Silero VAD, token timestamps → words → sentence-sized segments). `KbWhisperProvider` wraps `transcriber.transcribe()` (faster-whisper with KB-Whisper CTranslate2 models) and is the fallback: if the chosen engine fails to load or run, `run_pipeline` reruns transcription with KB-Whisper and adds a Swedish warning; `PipelineResult.engine` / IPC `engine` tell which engine was used. New engines subclass `TranscriptionProvider` and register in `registry.py`. Output: `TranscriptionResult` with `TranscribedSegment` list.
 
 4. **`_assign_speakers`** matches each transcription segment to the diarization segment with maximum time overlap.
 
@@ -76,7 +76,11 @@ Both transcriber and diarizer cache their models at module level to avoid reload
 - **`model.transcribe()` returns a generator** — must consume exactly once. Current code iterates and builds a list.
 - **faster-whisper word field is `probability`**, mapped to `TranscribedWord.confidence` in our dataclass.
 - **Do not use `torchaudio.load()`** on Windows — torchaudio 2.10+ requires torchcodec + FFmpeg DLLs. Use `soundfile.read()` for loading; only use `torchaudio.functional.resample()` (pure torch, no backend needed).
-- **pyannote requires HF token** + accepted model licenses for `pyannote/speaker-diarization-3.1` and `pyannote/segmentation-3.0`. Token resolved: parameter → `HF_TOKEN` env → `huggingface-cli login`.
+- **Pianissimo models are bundled as plain directories** `models/pianissimo-sv-onnx/` and `models/silero-vad-onnx/` (downloaded by `scripts/download_models.py` through onnx-asr), found via `MOTESSKRIBENT_MODELS_DIR` or `HF_HOME`. onnx-asr ≥0.12 excludes onnxruntime 1.24.1/1.25.x/1.26.0; requires Python ≥3.11.
+- **Startup warmup engine** is read by Rust from `<app_config_dir>/transcription_engine.txt` (written by the `set_transcription_engine` command when the setting changes), because settings otherwise live only in frontend `localStorage`.
+- **AI post-processing (text → text) lives in Rust**, not the sidecar: `src-tauri/src/llm.rs` is an OpenAI-compatible client (`GET /models`, streaming `POST /chat/completions` with plain-JSON fallback, events `llm-event`), `secrets.rs` stores API keys in Windows Credential Manager via `keyring` (never returned to the webview, never logged). Frontend settings (non-secret) are in `app/src/lib/aiProviders.ts` (`motesskribent-ai-settings`, Berget AI preset, migrates old Ollama settings to a disabled custom provider). AI is off until the user enables it; the app makes no AI network calls on its own (no startup health check). The old Ollama integration is removed.
+- **Rust only compiles on Windows** (`wasapi_loopback`, `libc` in `sidecar_manager.rs`). To check on Linux, copy `src-tauri` elsewhere, stub `wasapi_loopback.rs` and add `libc`; never commit that.
+- **Tests patch `transcriber.transcribe` as a module attribute** — providers must call it via `transcriber.transcribe(...)`, not a `from ... import transcribe` binding. `tests/test_transcription_contract.py` locks the exact arguments the pipeline sends to KB-Whisper.
 - **Segment merging exists in two places**: `_merge_segments` in diarizer.py (SpeakerSegment) and `merge_short_segments` in formatter.py (TranscribedSegment). Different dataclass types, similar logic.
 
 ## Conventions
@@ -108,5 +112,5 @@ Both transcriber and diarizer cache their models at module level to avoid reload
 
 **Performance optimizations:**
 - Persistent sidecar keeps models in memory between transcriptions
-- Parallel model loading (whisper + pyannote) during warmup via ThreadPoolExecutor
+- Parallel model loading (transcription provider + diarize) during warmup via ThreadPoolExecutor
 - Skip diarization when `num_speakers <= 1` (saves ~10-25s)

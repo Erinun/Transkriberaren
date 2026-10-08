@@ -14,6 +14,9 @@ pub struct TranscriptionConfig {
     pub prompt: Option<String>,
     pub speed_profile: Option<String>,
     pub audio_source: Option<String>,
+    /// Transkriberingsmotor ("pianissimo" eller "kb-whisper"). None = sidecarns standard.
+    #[serde(default)]
+    pub provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,6 +43,12 @@ pub enum PipelineEvent {
         segments: Option<Vec<serde_json::Value>>,
         #[serde(default)]
         word_count: Option<u32>,
+        /// Motorn som faktiskt användes (kan vara reservmotorn).
+        #[serde(default)]
+        engine: Option<String>,
+        /// Motorn som användaren valde.
+        #[serde(default)]
+        engine_requested: Option<String>,
     },
     #[serde(rename = "error")]
     Error { message: String, stage: String },
@@ -61,6 +70,10 @@ pub async fn run_python_pipeline(
         .arg(&config.model)
         .arg("--output")
         .arg(&config.output_dir);
+
+    if let Some(ref provider) = config.provider {
+        cmd.arg("--motor").arg(provider);
+    }
 
     if let Some(n) = config.num_speakers {
         cmd.arg("--talare").arg(n.to_string());
@@ -240,6 +253,47 @@ mod tests {
 
         let result = serde_json::from_value::<PipelineEvent>(json);
         assert!(result.is_ok(), "Result deserialisering misslyckades: {:?}", result.err());
+    }
+
+    /// Test att motorfälten följer med result-eventet.
+    #[test]
+    fn test_result_with_engine_fields() {
+        let json = serde_json::json!({
+            "type": "result",
+            "success": true,
+            "output_files": [],
+            "summary": {},
+            "model_name": "KBLab/kb-whisper-base",
+            "engine": "kb-whisper",
+            "engine_requested": "pianissimo",
+            "warnings": ["Pianissimo kunde inte köras (x). KB-Whisper användes i stället."]
+        });
+
+        match serde_json::from_value::<PipelineEvent>(json).unwrap() {
+            PipelineEvent::Result { engine, engine_requested, warnings, .. } => {
+                assert_eq!(engine.as_deref(), Some("kb-whisper"));
+                assert_eq!(engine_requested.as_deref(), Some("pianissimo"));
+                assert_eq!(warnings.len(), 1);
+            }
+            other => panic!("Fel variant: {:?}", other),
+        }
+    }
+
+    /// Test att äldre konfiguration utan provider fortfarande går att läsa.
+    #[test]
+    fn test_config_without_provider() {
+        let json = serde_json::json!({
+            "model": "KBLab/kb-whisper-base",
+            "num_speakers": null,
+            "formats": ["markdown"],
+            "output_dir": "",
+            "vad_enabled": true,
+            "prompt": null,
+            "speed_profile": "balanced",
+            "audio_source": null
+        });
+        let config: TranscriptionConfig = serde_json::from_value(json).unwrap();
+        assert!(config.provider.is_none());
     }
 
     /// Test error-event med request_id.

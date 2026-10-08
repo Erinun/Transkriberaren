@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export interface PipelineSettings {
+  provider: string;
   model: string;
   numSpeakers: number | null;
   formats: string[];
@@ -48,6 +49,7 @@ interface PipelineState {
   mdContent: string | null;
   warnings: string[];
   modelName: string | null;
+  engine: string | null;
   segments: TranscriptionSegment[];
   wordCount: number;
   lastEventTime: number;
@@ -67,6 +69,7 @@ const INITIAL_STATE: PipelineState = {
   mdContent: null,
   warnings: [],
   modelName: null,
+  engine: null,
   segments: [],
   wordCount: 0,
   lastEventTime: 0,
@@ -162,6 +165,7 @@ export function usePipeline() {
           mdContent: data.md_content ?? null,
           warnings: data.warnings ?? [],
           modelName: data.model_name ?? null,
+          engine: data.engine ?? null,
           segments: data.segments ?? [],
           wordCount: data.word_count ?? 0,
         }));
@@ -196,6 +200,7 @@ export function usePipeline() {
         await invoke("run_transcription", {
           audioPath,
           config: {
+            provider: settings.provider,
             model: settings.model,
             num_speakers: settings.numSpeakers,
             formats: settings.formats,

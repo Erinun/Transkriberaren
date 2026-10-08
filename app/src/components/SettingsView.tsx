@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { OllamaStatus } from "../hooks/useOllama";
+import type { LlmStatus } from "../hooks/useLlm";
+import AiProviderSettings from "./AiProviderSettings";
 import { usePromptTemplates } from "../hooks/usePromptTemplates";
 import { PROMPT_TEMPLATES } from "../data/promptTemplates";
 import CustomSelect from "./CustomSelect";
+import { DEFAULT_ENGINE, ENGINES, normalizeEngine, syncEnginePreference, type EngineId } from "../lib/engines";
 
 interface Settings {
+  defaultEngine: EngineId;
   defaultModel: string;
   defaultNumSpeakers: string;
   defaultFormats: { markdown: boolean; json: boolean; docx: boolean };
@@ -17,6 +20,7 @@ const STORAGE_KEY = "motesskribent-settings";
 
 function loadSettings(): Settings {
   const defaults: Settings = {
+    defaultEngine: DEFAULT_ENGINE,
     defaultModel: "KBLab/kb-whisper-base",
     defaultNumSpeakers: "",
     defaultFormats: { markdown: true, json: true, docx: false },
@@ -36,6 +40,7 @@ function loadSettings(): Settings {
       return {
         ...defaults,
         ...parsed,
+        defaultEngine: normalizeEngine(parsed.defaultEngine),
         defaultFormats: { ...defaults.defaultFormats, ...parsed.defaultFormats },
       };
     }
@@ -47,16 +52,10 @@ function saveSettings(s: Settings) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes < 1e9) return `${(bytes / 1e6).toFixed(0)} MB`;
-  return `${(bytes / 1e9).toFixed(1)} GB`;
-}
-
-export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaStatus }) {
+export default function SettingsView({ llmStatus }: { llmStatus: LlmStatus }) {
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [showSaved, setShowSaved] = useState(false);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [checking, setChecking] = useState(false);
 
   const flashSaved = () => {
     setShowSaved(true);
@@ -143,10 +142,30 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
         )}
       </div>
 
+      {/* Transcription engine */}
+      <div className="space-y-2">
+        <label className="block text-sm text-[var(--color-text-muted)]">Transkriberingsmotor</label>
+        <CustomSelect
+          value={settings.defaultEngine}
+          onChange={(v) => {
+            const engine = normalizeEngine(v);
+            update("defaultEngine", engine);
+            syncEnginePreference(engine);
+          }}
+          options={ENGINES.map((e) => ({ value: e.id, label: e.label }))}
+        />
+        <p className="text-xs text-[var(--color-text-muted)]">
+          {ENGINES.find((e) => e.id === settings.defaultEngine)?.description}
+          {" "}Ljudet bearbetas alltid lokalt på datorn.
+        </p>
+      </div>
+
       {/* Default model */}
       <div className="space-y-2">
         <div className="flex items-center gap-1.5">
-          <label className="block text-sm text-[var(--color-text-muted)]">Standardmodell</label>
+          <label className="block text-sm text-[var(--color-text-muted)]">
+            {settings.defaultEngine === "kb-whisper" ? "KB-Whisper-modell" : "KB-Whisper-modell (reserv)"}
+          </label>
           <button
             type="button"
             onClick={() => setShowModelInfo((v) => !v)}
@@ -196,6 +215,10 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
           onChange={(e) => update("defaultNumSpeakers", e.target.value)}
           className="w-32 px-3 py-2 rounded-lg glass-input text-sm"
         />
+        <p className="text-xs text-[var(--color-text-muted)]">
+          Vid inspelning är du alltid Talare 1. Med Auto eller 3+ skiljs fjärrdeltagarna åt (Talare 2, 3 …).
+          Anger du 1 eller 2 räknas alla fjärrdeltagare som Talare 2.
+        </p>
       </div>
 
       {/* Default formats */}
@@ -278,94 +301,8 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
       {/* Meeting detection */}
       <MeetingDetectionSection />
 
-      {/* Ollama */}
-      <div className="space-y-3 pt-4 border-t border-white/10">
-        <h3 className="text-lg font-semibold">Ollama (lokal LLM)</h3>
-
-        {/* Server URL */}
-        <div className="space-y-1">
-          <label className="block text-xs text-[var(--color-text-muted)]">Server-URL</label>
-          <input
-            type="text"
-            value={ollamaStatus.ollamaUrl}
-            onChange={(e) => ollamaStatus.setOllamaUrl(e.target.value)}
-            placeholder="http://localhost:11434"
-            className="w-full px-3 py-2 rounded-lg glass-input text-sm"
-          />
-          <p className="text-[10px] text-[var(--color-text-muted)]">
-            Standard: http://localhost:11434. Ändra om Ollama körs på en annan dator eller port.
-          </p>
-        </div>
-
-        {/* Connection status */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-sm">
-            {ollamaStatus.available === null ? (
-              <>
-                <div className="w-2.5 h-2.5 rounded-full bg-yellow-400 animate-pulse" />
-                <span className="text-[var(--color-text-muted)]">Kontrollerar...</span>
-              </>
-            ) : ollamaStatus.available ? (
-              <>
-                <div className="w-2.5 h-2.5 rounded-full bg-green-400" />
-                <span className="text-green-400">Ansluten</span>
-              </>
-            ) : (
-              <>
-                <div className="w-2.5 h-2.5 rounded-full bg-gray-500" />
-                <span className="text-[var(--color-text-muted)]">Ej ansluten</span>
-              </>
-            )}
-          </div>
-          <button
-            onClick={async () => {
-              setChecking(true);
-              await ollamaStatus.checkHealth();
-              setChecking(false);
-            }}
-            disabled={checking}
-            className="px-3 py-1 rounded-lg glass hover:bg-white/5 text-xs transition-colors disabled:opacity-50"
-          >
-            {checking ? "Kontrollerar..." : "Testa anslutning"}
-          </button>
-        </div>
-
-        {/* Help text when not connected */}
-        {ollamaStatus.available === false && (
-          <p className="text-xs text-[var(--color-text-muted)]">
-            Installera Ollama fran{" "}
-            <span className="text-[var(--color-primary)]">ollama.com</span>{" "}
-            och starta tjansten for att anvanda lokal LLM-bearbetning.
-          </p>
-        )}
-
-        {/* Model selector when connected */}
-        {ollamaStatus.available === true && (
-          <div className="space-y-2">
-            <label className="block text-sm text-[var(--color-text-muted)]">Standardmodell for Ollama</label>
-            {ollamaStatus.models.length > 0 ? (
-              <CustomSelect
-                value={ollamaStatus.selectedModel ?? ""}
-                onChange={(v) => ollamaStatus.selectModel(v)}
-                options={ollamaStatus.models.map((m) => ({
-                  value: m.name,
-                  label: `${m.name} (${formatFileSize(m.size)})`,
-                }))}
-              />
-            ) : (
-              <p className="text-xs text-[var(--color-text-muted)]">
-                Inga modeller installerade. Ladda ner med:{" "}
-                <code className="text-[var(--color-primary)]">ollama pull llama3.2</code>
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Ollama generation parameters */}
-        {ollamaStatus.available === true && (
-          <OllamaParametersSection />
-        )}
-      </div>
+      {/* AI-bearbetning */}
+      <AiProviderSettings llm={llmStatus} />
 
       {/* Prompt templates */}
       <div className="space-y-3 pt-4 border-t border-white/10">
@@ -543,106 +480,6 @@ export default function SettingsView({ ollamaStatus }: { ollamaStatus: OllamaSta
             + Skapa ny promptmall
           </button>
         )}
-      </div>
-    </div>
-  );
-}
-
-const OLLAMA_OPTIONS_KEY = "motesskribent-ollama-options";
-
-interface OllamaOptionsState {
-  temperature: number;
-  num_ctx: number;
-  num_predict: number;
-}
-
-function loadOllamaOptions(): OllamaOptionsState {
-  const defaults = { temperature: 0.3, num_ctx: 8192, num_predict: 4096 };
-  try {
-    const raw = localStorage.getItem(OLLAMA_OPTIONS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      // Migrate old defaults to new higher values
-      if (parsed.num_ctx === 4096) parsed.num_ctx = 8192;
-      if (parsed.num_predict === 2048) parsed.num_predict = 4096;
-      return { ...defaults, ...parsed };
-    }
-  } catch {}
-  return defaults;
-}
-
-function OllamaParametersSection() {
-  const [opts, setOpts] = useState<OllamaOptionsState>(loadOllamaOptions);
-
-  const update = (key: keyof OllamaOptionsState, value: number) => {
-    setOpts((prev) => {
-      const next = { ...prev, [key]: value };
-      localStorage.setItem(OLLAMA_OPTIONS_KEY, JSON.stringify(next));
-      return next;
-    });
-  };
-
-  return (
-    <div className="space-y-3 pt-3">
-      <p className="text-sm text-[var(--color-text-muted)] font-medium">Genereringsparametrar</p>
-
-      {/* Temperature */}
-      <div>
-        <div className="flex items-center justify-between mb-1">
-          <label className="text-xs text-[var(--color-text-muted)]">Temperatur</label>
-          <span className="text-xs text-[var(--color-text-muted)]">{opts.temperature.toFixed(1)}</span>
-        </div>
-        <input
-          type="range"
-          min={0}
-          max={10}
-          step={1}
-          value={opts.temperature * 10}
-          onChange={(e) => update("temperature", Number(e.target.value) / 10)}
-          className="result-range w-full"
-        />
-        <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5">
-          Lagre = mer fokuserad, hogre = mer kreativ. Standard: 0.3
-        </p>
-      </div>
-
-      {/* Context window */}
-      <div>
-        <label className="text-xs text-[var(--color-text-muted)] block mb-1">Kontextfonster (num_ctx)</label>
-        <CustomSelect
-          value={String(opts.num_ctx)}
-          onChange={(v) => update("num_ctx", Number(v))}
-          options={[
-            { value: "2048", label: "2 048" },
-            { value: "4096", label: "4 096" },
-            { value: "8192", label: "8 192 (standard)" },
-            { value: "16384", label: "16 384" },
-            { value: "32768", label: "32 768" },
-            { value: "65536", label: "65 536" },
-            { value: "131072", label: "131 072" },
-          ]}
-        />
-        <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5">
-          Storre varden kraver mer RAM. 8192 racker for moeten under 30 min. For langre moeten (1+ timme), anvand 32768 eller hogre.
-          Kontextfonstret hojs automatiskt om transkriberingen ar storre.
-        </p>
-      </div>
-
-      {/* Max tokens */}
-      <div>
-        <label className="text-xs text-[var(--color-text-muted)] block mb-1">Max tokens (num_predict)</label>
-        <CustomSelect
-          value={String(opts.num_predict)}
-          onChange={(v) => update("num_predict", Number(v))}
-          options={[
-            { value: "512", label: "512" },
-            { value: "1024", label: "1 024" },
-            { value: "2048", label: "2 048" },
-            { value: "4096", label: "4 096 (standard)" },
-            { value: "8192", label: "8 192" },
-            { value: "16384", label: "16 384" },
-          ]}
-        />
       </div>
     </div>
   );
