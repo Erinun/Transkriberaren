@@ -55,11 +55,10 @@ def main():
     # 1. KB-Whisper models (CTranslate2 format) — public, no token needed
     #    Only download files needed by faster-whisper (CTranslate2 format).
     #    Skip PyTorch, SafeTensors, GGML, ONNX variants (~8 GB savings).
-    #    Downloads: tiny (~160 MB), base (~240 MB), small (~460 MB)
+    #    Endast base (~240 MB) ingår sedan 0.7.1: Pianissimo är standardmotor och
+    #    tiny/small togs bort så att installern håller sig under GitHubs gräns på 2 GB per fil.
     whisper_models = [
-        ("KBLab/kb-whisper-tiny", "tiny"),
         ("KBLab/kb-whisper-base", "base"),
-        ("KBLab/kb-whisper-small", "small"),
     ]
     allow = [
         "config.json",
@@ -83,7 +82,7 @@ def main():
         "pytorch_model*",
     ]
     for i, (repo_id, label) in enumerate(whisper_models, 1):
-        print(f"[1.{i}/4] Laddar ned {repo_id} (enbart CTranslate2) ...")
+        print(f"[1.{i}/{len(whisper_models)}] Laddar ned {repo_id} (enbart CTranslate2) ...")
         snapshot_download(
             repo_id,
             cache_dir=CACHE_DIR,

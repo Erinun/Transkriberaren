@@ -17,9 +17,9 @@ from motesskribent import __version__
 console = Console()
 
 KNOWN_MODELS = [
-    ("KBLab/kb-whisper-tiny", "tiny", "~160 MB", "Snabbast, bra kvalitet"),
-    ("KBLab/kb-whisper-base", "base", "~240 MB", "Snabb, mycket bra kvalitet (rekommenderas)"),
-    ("KBLab/kb-whisper-small", "small", "~460 MB", "Bra balans hastighet/kvalitet"),
+    ("KBLab/kb-whisper-base", "base", "~240 MB", "Ingår i installationen (alternativ motor och reserv)"),
+    ("KBLab/kb-whisper-tiny", "tiny", "~160 MB", "Ingår inte; laddas ner vid behov (kräver nätverk)"),
+    ("KBLab/kb-whisper-small", "small", "~460 MB", "Ingår inte; laddas ner vid behov (kräver nätverk)"),
 ]
 
 

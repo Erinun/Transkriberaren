@@ -40,7 +40,7 @@ const SECTIONS = [
       </svg>
     ),
     title: "Modeller",
-    body: "Standardmotorn är Pianissimo, en svensk taligenkänningsmodell från Klang. KB-Whisper (Tiny ~160 MB, Base ~240 MB, Small ~460 MB) från KB finns som alternativ och används automatiskt som reserv om Pianissimo inte kan köras. Båda körs lokalt och är tränade för svenska.",
+    body: "Standardmotorn är Pianissimo, en svensk taligenkänningsmodell från Klang. KB-Whisper Base (~240 MB) från KB finns som alternativ och används automatiskt som reserv om Pianissimo inte kan köras. Båda körs lokalt och är tränade för svenska.",
   },
   {
     icon: (

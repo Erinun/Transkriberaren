@@ -32,7 +32,8 @@ function loadSettings(): Settings {
     if (raw) {
       const parsed = JSON.parse(raw);
       // Migrera ogiltiga modeller → base
-      const validModels = ["KBLab/kb-whisper-tiny", "KBLab/kb-whisper-base", "KBLab/kb-whisper-small"];
+      // Sedan 0.7.1 ingår bara Base (Tiny/Small togs bort för att hålla installern under 2 GB)
+      const validModels = ["KBLab/kb-whisper-base"];
       if (parsed.defaultModel && !validModels.includes(parsed.defaultModel)) {
         parsed.defaultModel = "KBLab/kb-whisper-base";
         localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
@@ -76,7 +77,6 @@ export default function SettingsView({ llmStatus }: { llmStatus: LlmStatus }) {
   const [editTemplate, setEditTemplate] = useState("");
   const [creatingNew, setCreatingNew] = useState(false);
 
-  const [showModelInfo, setShowModelInfo] = useState(false);
 
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     setSettings((prev) => {
@@ -160,47 +160,13 @@ export default function SettingsView({ llmStatus }: { llmStatus: LlmStatus }) {
         </p>
       </div>
 
-      {/* Default model */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-1.5">
-          <label className="block text-sm text-[var(--color-text-muted)]">
-            {settings.defaultEngine === "kb-whisper" ? "KB-Whisper-modell" : "KB-Whisper-modell (reserv)"}
-          </label>
-          <button
-            type="button"
-            onClick={() => setShowModelInfo((v) => !v)}
-            className="w-4 h-4 rounded-full border border-[var(--color-text-muted)] flex items-center justify-center text-[10px] leading-none text-[var(--color-text-muted)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)] transition-colors"
-            title="Visa modellrekommendationer"
-          >
-            i
-          </button>
-        </div>
-        {showModelInfo && (
-          <div className="glass rounded-lg p-3 space-y-2">
-            <p className="text-xs font-medium text-[var(--color-text-muted)]">Vilken modell passar ditt möte?</p>
-            <div className="text-xs text-[var(--color-text-muted)]">
-              <span className="font-medium text-[var(--color-text)]">Tiny</span>
-              {" \u2014 Snabba anteckningar, korta möten (<15 min), enkel dialog med 1\u20132 talare"}
-            </div>
-            <div className="text-xs text-[var(--color-text-muted)]">
-              <span className="font-medium text-[var(--color-text)]">Base</span>
-              {" \u2014 De flesta möten \u2014 bra balans mellan hastighet och kvalitet. Fungerar bra för teammöten, intervjuer och workshops"}
-            </div>
-            <div className="text-xs text-[var(--color-text-muted)]">
-              <span className="font-medium text-[var(--color-text)]">Small</span>
-              {" \u2014 Längre möten med många talare, brusiga inspelningar, eller när hög noggrannhet krävs"}
-            </div>
-          </div>
-        )}
-        <CustomSelect
-          value={settings.defaultModel}
-          onChange={(v) => update("defaultModel", v)}
-          options={[
-            { value: "KBLab/kb-whisper-tiny", label: "Tiny (~160 MB) — snabbast" },
-            { value: "KBLab/kb-whisper-base", label: "Base (~240 MB) — rekommenderas" },
-            { value: "KBLab/kb-whisper-small", label: "Small (~460 MB)" },
-          ]}
-        />
+      {/* KB-Whisper (alternativ motor och reserv) */}
+      <div className="space-y-1">
+        <label className="block text-sm text-[var(--color-text-muted)]">KB-Whisper</label>
+        <p className="text-xs text-[var(--color-text-muted)]">
+          KB-Whisper Base (~240 MB) ingår och används{" "}
+          {settings.defaultEngine === "kb-whisper" ? "som transkriberingsmotor" : "som reserv om Pianissimo inte kan köras"}.
+        </p>
       </div>
 
       {/* Default speakers */}

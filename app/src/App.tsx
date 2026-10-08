@@ -43,7 +43,8 @@ function loadSettingsForRecording(): PipelineSettings {
     if (raw) {
       const s = JSON.parse(raw);
       // Migrera ogiltiga modeller → base
-      const validModels = ["KBLab/kb-whisper-tiny", "KBLab/kb-whisper-base", "KBLab/kb-whisper-small"];
+      // Sedan 0.7.1 ingår bara Base (Tiny/Small togs bort för att hålla installern under 2 GB)
+      const validModels = ["KBLab/kb-whisper-base"];
       if (s.defaultModel && !validModels.includes(s.defaultModel)) {
         s.defaultModel = "KBLab/kb-whisper-base";
         localStorage.setItem(STORAGE_KEY, JSON.stringify(s));

@@ -14,9 +14,7 @@ interface Props {
 }
 
 const MODELS = [
-  { id: "KBLab/kb-whisper-tiny", label: "Tiny (~160 MB)", desc: "Snabbast", tip: "Snabba anteckningar, korta möten (<15 min), enkel dialog med 1\u20132 talare" },
   { id: "KBLab/kb-whisper-base", label: "Base (~240 MB)", desc: "Rekommenderas", tip: "De flesta möten \u2014 bra balans mellan hastighet och kvalitet. Fungerar bra för teammöten, intervjuer och workshops" },
-  { id: "KBLab/kb-whisper-small", label: "Small (~460 MB)", desc: "Bra balans", tip: "Längre möten med många talare, brusiga inspelningar, eller när hög noggrannhet krävs" },
 ];
 
 function formatTime(seconds: number): string {
@@ -42,7 +40,8 @@ function loadDefaultSettings() {
     if (raw) {
       const s = JSON.parse(raw);
       // Migrera ogiltiga modeller → base
-      const validModels = ["KBLab/kb-whisper-tiny", "KBLab/kb-whisper-base", "KBLab/kb-whisper-small"];
+      // Sedan 0.7.1 ingår bara Base (Tiny/Small togs bort för att hålla installern under 2 GB)
+      const validModels = ["KBLab/kb-whisper-base"];
       if (s.defaultModel && !validModels.includes(s.defaultModel)) {
         s.defaultModel = "KBLab/kb-whisper-base";
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
