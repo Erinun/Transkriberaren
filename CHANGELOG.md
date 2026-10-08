@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.0] — 2026-10-08
+
+### Nya funktioner
+- Pianissimo från Klang är ny standardmotor för transkribering (lokal, svensk, CC BY 4.0). KB-Whisper finns kvar som val och används automatiskt som reserv om Pianissimo inte kan köras.
+- Motorval under Inställningar; resultatvyn visar vilken motor som användes.
+- Fjärrdeltagare i inspelningar skiljs åt (Talare 2, 3 …) när antal talare är Auto eller 3+.
+- AI-bearbetning mot OpenAI-kompatibla tjänster, med Berget AI som förval. API-nyckeln sparas i Windows nyckelförvaring. Avstängt tills det aktiveras.
+
+### Borttaget
+- Ollama-kopplingen. Tidigare Ollama-inställningar flyttas till "Egen server" (http://localhost:11434/v1) och behöver aktiveras en gång.
+
+### Bygg och distribution
+- Python 3.11 krävs. onnx-asr tillagt; Pianissimo int8 (~660 MB) ingår i installationen.
+
 ## [0.5.0] — 2026-03-31
 
 ### Nya funktioner
