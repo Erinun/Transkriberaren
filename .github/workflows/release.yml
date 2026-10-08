@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - "v*"
+  # Manuell start från Actions-fliken: bygger main och skapar taggen v<version från pyproject.toml>.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -14,6 +16,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Refuse to overwrite an existing release
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path pyproject.toml -Pattern '^version\s*=\s*"(.+)"').Matches[0].Groups[1].Value
+          if (git ls-remote --tags origin "v$v") {
+            Write-Error "Taggen v$v finns redan. Bumpa versionen i pyproject.toml först (scripts/bump-version.sh)."
+            exit 1
+          }
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
@@ -98,6 +110,17 @@ jobs:
         run: |
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=${{ steps.version.outputs.VERSION }} scripts\installer.iss
 
+      - name: Check installer size (GitHub limit 2 GiB per file)
+        shell: pwsh
+        run: |
+          $exe = Get-Item "output/MotesSkribent_${{ steps.version.outputs.VERSION }}_x64-setup.exe"
+          $mb = [math]::Round($exe.Length / 1MB)
+          Write-Host "Installerarens storlek: $mb MB"
+          if ($exe.Length -ge 2000000000) {
+            Write-Error "Installern är $mb MB. GitHub tillåter högst 2048 MB per fil i en release. Minska modellerna i scripts/download_models.py."
+            exit 1
+          }
+
       - name: Sign installer for updater
         shell: pwsh
         env:
@@ -133,6 +156,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          tag_name: "v${{ steps.version.outputs.VERSION }}"
+          target_commitish: ${{ github.sha }}
           name: "MötesSkribent v${{ steps.version.outputs.VERSION }}"
           body: "Automatisk release. Befintliga installationer uppdateras automatiskt."
           files: |

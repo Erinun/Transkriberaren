@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.1] — 2026-10-08
+
+### Ändrat
+- KB-Whisper Tiny och Small ingår inte längre i installationen; KB-Whisper Base finns kvar som alternativ motor och reserv. Den som valt Tiny eller Small flyttas automatiskt till Base. (0.7.0 kunde inte publiceras eftersom installern blev större än GitHubs gräns på 2 GB per fil.)
+
+### Bygg och distribution
+- Release-bygget stoppar med ett tydligt fel om installern blir för stor, och kan startas manuellt från Actions-fliken.
+
 ## [0.7.0] — 2026-10-08
 
 ### Nya funktioner
