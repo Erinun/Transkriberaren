@@ -1,66 +1,98 @@
 import { useEffect, useRef } from "react";
+import { BERGET_CHAT_MODELS, formatMeetingHours, meetingHoursFor } from "../lib/aiProviders";
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
 }
 
-const SECTIONS = [
+/** Hur transkriptets text tar sig igenom appen, steg för steg. */
+const DATA_FLOW = [
   {
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-      </svg>
-    ),
-    title: "Filformat som stöds",
-    body: "WAV, MP3, M4A, FLAC, OGG och WMA. Alla format konverteras automatiskt till WAV 16 kHz mono innan bearbetning.",
+    step: "1",
+    title: "Ljudet stannar på datorn",
+    body: "Taligenkänning och talaridentifiering körs lokalt med CPU. Inget ljud skickas någonstans.",
   },
   {
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.348 14.651a3.75 3.75 0 010-5.303m5.304 0a3.75 3.75 0 010 5.303m-7.425 2.122a6.75 6.75 0 010-9.546m9.546 0a6.75 6.75 0 010 9.546M5.106 18.894c-3.808-3.808-3.808-9.98 0-13.789m13.788 0c3.808 3.808 3.808 9.981 0 13.79M12 12h.008v.007H12V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
-      </svg>
-    ),
-    title: "VAD-filtrering",
-    body: "Voice Activity Detection (VAD) analyserar ljudet och identifierar avsnitt med tal. Tysta delar filtreras bort, vilket ger snabbare bearbetning och renare transkribering.",
+    step: "2",
+    title: "Text till AI – bara om du vill",
+    body: "AI-bearbetning är avstängd tills du slår på den. Startar du en bearbetning skickas transkriptets text och promptmallen till tjänsten du valt – aldrig ljudet.",
   },
   {
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-    title: "Senaste transkriptioner",
-    body: "De 5 senaste transkriptionerna sparas lokalt i webbläsarens lagring. Äldre transkriptioner tas automatiskt bort. Använd Spara-knappen för att exportera viktiga resultat.",
-  },
-  {
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25z" />
-      </svg>
-    ),
-    title: "Modeller",
-    body: "Standardmotorn är Pianissimo, en svensk taligenkänningsmodell från Klang. KB-Whisper Base (~240 MB) från KB finns som alternativ och används automatiskt som reserv om Pianissimo inte kan köras. Båda körs lokalt och är tränade för svenska.",
-  },
-  {
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
-      </svg>
-    ),
-    title: "Upphov och licenser",
-    body: "Pianissimo (KlangAI/pianissimo-sv-onnx) är skapad av Klang och används under licensen Creative Commons Erkännande 4.0 (CC BY 4.0). KB-Whisper är skapad av Kungliga biblioteket (KBLab). Taligenkänningen körs med onnx-asr och faster-whisper.",
-  },
-  {
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
-      </svg>
-    ),
-    title: "Lokal bearbetning",
-    body: "All data stannar på din dator. Ingen ljudfil eller text skickas till externa servrar. Modellerna körs lokalt med CPU-inferens, vilket gör verktyget GDPR-säkert.",
+    step: "3",
+    title: "Resultatet sparas lokalt",
+    body: "Sammanfattningar och protokoll sparas tillsammans med transkriptionen på din dator.",
   },
 ];
+
+/** Jämförelse av var texten hamnar beroende på vilken AI-tjänst man väljer. */
+const COMPARISON_ROWS = [
+  {
+    label: "Var bearbetas texten?",
+    berget: "På Bergets egna servrar i svenska datacenter.",
+    cloud: "Ofta i USA, ibland i en EU-region beroende på avtal.",
+    own: "Där servern står – på din dator eller i organisationens nät.",
+  },
+  {
+    label: "Sparas texten?",
+    berget: "Enligt Berget sparas varken frågor eller svar.",
+    cloud: "Sparas ofta en tid, t.ex. 30 dagar för missbrukskontroll.",
+    own: "Bestäms av dig eller organisationen.",
+  },
+  {
+    label: "Tränas AI:n på texten?",
+    berget: "Nej, enligt Berget.",
+    cloud: "Normalt inte via API, men villkoren varierar.",
+    own: "Nej.",
+  },
+  {
+    label: "Vilken lag gäller?",
+    berget: "Svenskt bolag – omfattas inte av amerikanska CLOUD Act.",
+    cloud: "Amerikanska bolag kan omfattas av CLOUD Act, även med data i EU.",
+    own: "Samma som för din dator eller organisation.",
+  },
+  {
+    label: "Modeller",
+    berget: "Öppna modeller som Berget själv kör, t.ex. Gemma, Mistral och Kimi.",
+    cloud: "Tjänstens egna modeller, t.ex. GPT eller Gemini.",
+    own: "De modeller du själv har installerat.",
+  },
+  {
+    label: "Kostnad",
+    berget: "Eget konto och API-nyckel, betalning efter användning.",
+    cloud: "Eget konto och API-nyckel, betalning efter användning.",
+    own: "Gratis att använda, men kräver kraftfull dator eller server.",
+  },
+];
+
+const PRICE_STYLE: Record<string, string> = {
+  Låg: "text-[var(--color-success)] bg-[var(--color-success)]/10",
+  Medel: "text-[var(--color-warning)] bg-[var(--color-warning)]/10",
+  Hög: "text-[var(--color-error)] bg-[var(--color-error)]/10",
+};
+
+const FACTS = [
+  {
+    title: "Taligenkänning",
+    body: "Standardmotorn är Pianissimo, en svensk modell från Klang. KB-Whisper från Kungliga biblioteket finns som alternativ och tar över automatiskt om Pianissimo inte kan köras. Röstaktivitetsdetektering (VAD) filtrerar bort tystnad.",
+  },
+  {
+    title: "Filformat och historik",
+    body: "WAV, MP3, M4A, FLAC, OGG och WMA stöds. De 5 senaste transkriptionerna, med eventuella AI-resultat, sparas lokalt. Äldre tas bort automatiskt – använd Spara för att behålla viktiga resultat.",
+  },
+  {
+    title: "Upphov och licenser",
+    body: "Pianissimo (KlangAI/pianissimo-sv-onnx) är skapad av Klang under CC BY 4.0. KB-Whisper är skapad av KBLab. Taligenkänningen körs med onnx-asr och faster-whisper. Berget AI är en fristående tjänst med egna villkor.",
+  },
+];
+
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-primary)] mb-3">
+      {children}
+    </h3>
+  );
+}
 
 export default function InfoModal({ isOpen, onClose }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -85,19 +117,24 @@ export default function InfoModal({ isOpen, onClose }: Props) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+      style={{ backgroundColor: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }}
       onClick={handleOverlayClick}
     >
       <div
         ref={panelRef}
-        className="glass-elevated rounded-2xl max-w-md w-full max-h-[80vh] overflow-y-auto p-6 animate-fade-in"
+        className="bg-[var(--color-surface)] border border-white/10 shadow-2xl shadow-black/60 rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto p-6 md:p-8 animate-fade-in"
       >
         {/* Header */}
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold">Om MötesSkribent</h2>
+        <div className="flex items-start justify-between mb-6">
+          <div>
+            <h2 className="text-xl font-semibold">Om MötesSkribent</h2>
+            <p className="text-sm text-[var(--color-text-muted)] mt-1">
+              Lokal mötestranskribering på svenska – med valfri AI-bearbetning från en tjänst du själv väljer.
+            </p>
+          </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/5 transition-colors"
+            className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-white/5 transition-colors"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -105,27 +142,119 @@ export default function InfoModal({ isOpen, onClose }: Props) {
           </button>
         </div>
 
-        {/* Sections */}
-        <div className="space-y-4">
-          {SECTIONS.map((section, i) => (
-            <div key={i}>
-              <div className="flex items-start gap-3">
-                <div className="text-[var(--color-primary)] mt-0.5 shrink-0">
-                  {section.icon}
+        {/* Dataflöde */}
+        <section className="mb-8">
+          <SectionHeading>Så hanteras din information</SectionHeading>
+          <div className="grid gap-3 md:grid-cols-3">
+            {DATA_FLOW.map((item) => (
+              <div key={item.step} className="rounded-xl bg-white/[0.05] border border-white/10 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-6 h-6 rounded-full bg-[var(--color-primary)]/15 text-[var(--color-primary)] text-xs font-semibold flex items-center justify-center">
+                    {item.step}
+                  </span>
+                  <h4 className="text-sm font-semibold">{item.title}</h4>
                 </div>
-                <div>
-                  <h3 className="text-sm font-semibold mb-1">{section.title}</h3>
-                  <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
-                    {section.body}
-                  </p>
-                </div>
+                <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">{item.body}</p>
               </div>
-              {i < SECTIONS.length - 1 && (
-                <hr className="mt-4 border-white/5" />
-              )}
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Jämförelse */}
+        <section className="mb-8">
+          <SectionHeading>Berget AI jämfört med andra AI-tjänster</SectionHeading>
+          <p className="text-xs text-[var(--color-text-muted)] leading-relaxed mb-4 max-w-3xl">
+            AI-bearbetningen fungerar med alla tjänster som har ett OpenAI-kompatibelt gränssnitt. Berget AI är
+            förvalt eftersom det är en svensk tjänst där mötestexten bearbetas i Sverige. Väljer du en annan
+            tjänst under <b>Egen server</b> är det den tjänstens villkor som gäller för din text.
+          </p>
+          <div className="overflow-x-auto rounded-xl border border-white/5">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-white/[0.04] text-left">
+                  <th className="p-3 font-medium text-[var(--color-text-muted)] w-[16%]"></th>
+                  <th className="p-3 font-semibold text-[var(--color-primary)] w-[28%]">Berget AI (förvalt)</th>
+                  <th className="p-3 font-semibold w-[28%]">Stora molntjänster (t.ex. OpenAI, Google)</th>
+                  <th className="p-3 font-semibold w-[28%]">Egen server (t.ex. Ollama)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {COMPARISON_ROWS.map((row) => (
+                  <tr key={row.label} className="border-t border-white/5 align-top">
+                    <td className="p-3 font-medium">{row.label}</td>
+                    <td className="p-3 text-[var(--color-text-muted)] bg-[var(--color-primary)]/[0.04]">{row.berget}</td>
+                    <td className="p-3 text-[var(--color-text-muted)]">{row.cloud}</td>
+                    <td className="p-3 text-[var(--color-text-muted)]">{row.own}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[11px] text-[var(--color-text-muted)] mt-2 opacity-80">
+            Uppgifterna om Berget kommer från Bergets egen beskrivning. Villkoren hos molntjänsterna varierar
+            mellan tjänst och avtal – läs alltid tjänstens egna villkor.
+          </p>
+        </section>
+
+        {/* Bergets modeller */}
+        <section className="mb-8">
+          <SectionHeading>Bergets modeller i appen</SectionHeading>
+          <p className="text-xs text-[var(--color-text-muted)] leading-relaxed mb-4 max-w-3xl">
+            Du väljer modell i Inställningar. En billig modell räcker oftast för sammanfattningar och protokoll,
+            medan större modeller ger mer genomarbetade texter men är långsammare och dyrare. Mötestiden visar
+            ungefär hur långt möte modellen klarar att läsa in på en gång.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {BERGET_CHAT_MODELS.map((m) => (
+              <div key={m.id} className="rounded-xl bg-white/[0.05] border border-white/10 p-4">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <h4 className="text-sm font-semibold">
+                    {m.name}
+                    {m.preview && (
+                      <span className="ml-1.5 text-[10px] font-normal text-[var(--color-text-muted)]">förhandsversion</span>
+                    )}
+                  </h4>
+                  <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 ${PRICE_STYLE[m.price]}`}>
+                    {m.price} kostnad
+                  </span>
+                </div>
+                <p className="text-xs text-[var(--color-text-muted)] leading-relaxed mb-2">{m.description}</p>
+                <p className="text-[11px] text-[var(--color-text-muted)] opacity-80">
+                  Klarar {formatMeetingHours(meetingHoursFor(m))}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Fakta */}
+        <section className="mb-8">
+          <SectionHeading>Teknik och licenser</SectionHeading>
+          <div className="grid gap-5 md:grid-cols-3">
+            {FACTS.map((fact) => (
+              <div key={fact.title}>
+                <h4 className="text-sm font-semibold mb-1">{fact.title}</h4>
+                <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">{fact.body}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Om skaparen */}
+        <section className="rounded-xl bg-[var(--color-primary)]/[0.06] border border-[var(--color-primary)]/15 p-4 flex items-start gap-3">
+          <div className="text-[var(--color-primary)] mt-0.5 shrink-0">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+            </svg>
+          </div>
+          <div>
+            <h4 className="text-sm font-semibold mb-1">Om skaparen</h4>
+            <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
+              MötesSkribent är skapad av Erik Nunez, som arbetar med AI inom HR i Västerås stad. Verktyget är byggt
+              för att göra mötesanteckningar enklare utan att ge upp kontrollen över datan.
+            </p>
+          </div>
+        </section>
       </div>
     </div>
   );
