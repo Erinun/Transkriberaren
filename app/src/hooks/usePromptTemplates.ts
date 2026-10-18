@@ -69,12 +69,13 @@ export function usePromptTemplates() {
   );
 
   const createTemplate = useCallback(
-    (template: Omit<PromptTemplate, "id">) => {
+    (template: Omit<PromptTemplate, "id">): string => {
       const newTemplate: PromptTemplate = { ...template, id: generateId() };
       persist({
         ...stored,
         userTemplates: [...stored.userTemplates, newTemplate],
       });
+      return newTemplate.id;
     },
     [stored, persist],
   );
