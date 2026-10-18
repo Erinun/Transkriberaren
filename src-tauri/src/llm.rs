@@ -73,9 +73,17 @@ pub struct LlmModel {
     pub context_length: Option<u64>,
 }
 
+/// Modelltyper som inte kan skriva text (t.ex. Bergets inbäddnings- och
+/// taligenkänningsmodeller) och därför inte passar för chatt.
+const NON_CHAT_MODEL_TYPES: &[&str] = &[
+    "embedding", "embeddings", "rerank", "reranker", "speech-to-text", "text-to-speech",
+    "transcription", "audio", "image", "image-generation", "moderation", "classification", "system-one",
+];
+
 /// Tolka svaret från `GET /models`. Klarar OpenAI-formatet (`data: [{id}]`),
 /// en ren lista och `models: [...]`; extra fält som kontextlängd plockas upp
-/// om de finns men krävs inte.
+/// om de finns men krävs inte. Modeller som servern märker som icke-chatt
+/// (`model_type`/`type`) sorteras bort.
 pub fn parse_models(body: &Value) -> Vec<LlmModel> {
     let items = body
         .get("data")
@@ -93,6 +101,14 @@ pub fn parse_models(body: &Value) -> Vec<LlmModel> {
                 .trim()
                 .to_string();
             if id.is_empty() {
+                return None;
+            }
+            let model_type = m
+                .get("model_type")
+                .or_else(|| m.get("type"))
+                .and_then(|v| v.as_str())
+                .map(|t| t.trim().to_ascii_lowercase());
+            if model_type.as_deref().is_some_and(|t| NON_CHAT_MODEL_TYPES.contains(&t)) {
                 return None;
             }
             let context_length = ["context_length", "max_model_len", "context_window", "max_context_length"]
@@ -555,6 +571,19 @@ mod tests {
         assert_eq!(parse_models(&json!(["m1", "m2"])).len(), 2);
         assert_eq!(parse_models(&json!({"models": [{"name": "llama3"}]}))[0].id, "llama3");
         assert!(parse_models(&json!({"oväntat": true})).is_empty());
+    }
+
+    #[test]
+    fn skips_non_chat_models() {
+        let body = json!({"data": [
+            {"id": "google/gemma-4-31B-it", "model_type": "text"},
+            {"id": "KBLab/kb-whisper-large", "model_type": "speech-to-text"},
+            {"id": "intfloat/multilingual-e5-large", "model_type": "embedding"},
+            {"id": "BAAI/bge-reranker-v2-m3", "model_type": "rerank"},
+            {"id": "utan-typ"}
+        ]});
+        assert_eq!(parse_models(&body).iter().map(|m| m.id.as_str()).collect::<Vec<_>>(),
+                   vec!["google/gemma-4-31B-it", "utan-typ"]);
     }
 
     #[test]

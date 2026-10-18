@@ -35,7 +35,7 @@ export interface LlmStatus {
   setEnabled: (enabled: boolean) => void;
   setProvider: (id: string) => void;
   updateCurrent: (changes: Partial<ProviderSettings>) => void;
-  setGeneration: (changes: Partial<Pick<AiSettings, "temperature" | "maxTokens">>) => void;
+  setGeneration: (changes: Partial<Pick<AiSettings, "temperature">>) => void;
   saveKey: (key: string) => Promise<void>;
   deleteKey: () => Promise<void>;
   refreshModels: () => Promise<void>;
@@ -97,7 +97,7 @@ export function useLlmStatus(): LlmStatus {
     [persist],
   );
   const setGeneration = useCallback(
-    (changes: Partial<Pick<AiSettings, "temperature" | "maxTokens">>) => persist((s) => ({ ...s, ...changes })),
+    (changes: Partial<Pick<AiSettings, "temperature">>) => persist((s) => ({ ...s, ...changes })),
     [persist],
   );
 
@@ -231,7 +231,8 @@ export function useLlm(status: LlmStatus) {
           model: status.current.model,
           system,
           prompt,
-          options: { temperature: status.settings.temperature, max_tokens: status.settings.maxTokens },
+          // Ingen max_tokens: svarets längd styrs av transkriptet och modellens egen gräns.
+          options: { temperature: status.settings.temperature },
         });
       } catch (err) {
         // Felet har normalt redan kommit som llm-event; sätt det om inte.
@@ -240,7 +241,7 @@ export function useLlm(status: LlmStatus) {
       }
     },
     [status.isReady, status.preset.id, status.current.baseUrl, status.current.model,
-     status.settings.temperature, status.settings.maxTokens],
+     status.settings.temperature],
   );
 
   const cancel = useCallback(async () => {

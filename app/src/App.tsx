@@ -378,7 +378,7 @@ function AppInner() {
 
       {/* Content */}
       <main className={`flex-1 ${activeView === "result" ? "overflow-hidden" : "overflow-y-auto p-6"}`}>
-        <div className={activeView === "result" ? "h-full" : ""}>
+        <div className={activeView === "result" || activeView === "settings" ? "h-full" : ""}>
           {activeView === "dashboard" && (
             <DashboardView
               onNavigate={setActiveView}
