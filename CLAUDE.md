@@ -34,13 +34,13 @@ motesskribent info
 
 # Tauri desktop app (requires Rust toolchain + Node.js)
 # First time only: install frontend dependencies
-cd C:\Dev\Motesskribent\app
+cd C:\Dev\Transkriberaren\app
 npm install
 
 # Start dev mode (starts both Vite frontend + Rust backend)
 # PowerShell: add cargo to PATH first if needed
 $env:Path += ";$env:USERPROFILE\.cargo\bin"
-cd C:\Dev\Motesskribent\src-tauri
+cd C:\Dev\Transkriberaren\src-tauri
 cargo tauri dev
 
 # Persistent sidecar server (used internally by GUI, not called directly)
