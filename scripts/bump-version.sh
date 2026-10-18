@@ -26,16 +26,17 @@ sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
 # 2. src-tauri/tauri.conf.json
 sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
 
-# 3. app/package.json
-sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" app/package.json
+# 3. app/package.json + app/package-lock.json (npm uppdaterar båda, utan nätverk)
+(cd app && npm version "$VERSION" --no-git-tag-version --allow-same-version > /dev/null)
 
 echo "Uppdaterade:"
 echo "  pyproject.toml        → $VERSION"
 echo "  src-tauri/tauri.conf.json → $VERSION"
 echo "  app/package.json      → $VERSION"
+echo "  app/package-lock.json → $VERSION"
 
 # Committa och tagga
-git add pyproject.toml src-tauri/tauri.conf.json app/package.json
+git add pyproject.toml src-tauri/tauri.conf.json app/package.json app/package-lock.json
 git commit -m "Bumpa version till $VERSION"
 git tag "v$VERSION"
 

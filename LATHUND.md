@@ -11,68 +11,126 @@ Dessa behöver bara göras en gång:
    - `TAURI_SIGNING_PRIVATE_KEY` — innehållet i `~/.tauri/motesskribent.key`
    - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — lösenordet du valde vid nyckelgenerering
 
+### Innan du börjar: så kopierar du kommandon
+
+> **Kopiera bara själva kommandoraden.** Raderna med tre backticks (```` ``` ````) och ordet `bash` hör till dokumentets formatering och ska **inte** klistras in.
+> Git Bash tolkar backticks som ett kommando i kommandot, så raden körs inte, och du får inget felmeddelande.
+
+Kör alla kommandon nedan i **Git Bash** från projektmappen `/c/Dev/Transkriberaren`.
+
+### Snabbversion (när allt redan är committat)
+
+Byt `X.Y.Z` mot den nya versionen, t.ex. `0.7.2`:
+
+```bash
+./scripts/bump-version.sh X.Y.Z
+```
+```bash
+git push && git push --tags
+```
+
+Mer behöver du inte göra. Nedan står samma sak steg för steg, med kontroller.
+
 ### Steg-för-steg: Ny release
 
-#### 1. Se till att alla ändringar är pushade
+#### 1. Kolla att allt är committat och pushat
 
 ```bash
 git status
-# Om det finns opushade commits eller workflow-ändringar:
-git push
 ```
 
-**VIKTIGT:** Om du har ändrat `.github/workflows/release.yml` eller andra filer — pusha dem FÖRST innan du skapar en tagg. GitHub Actions använder workflow-filen från taggen, så taggen måste skapas EFTER att workflow-ändringarna finns på GitHub.
+Du ska se `nothing to commit, working tree clean` och `Your branch is up to date with 'origin/main'`.
 
-#### 2. Bumpa version i Gitbash
+- Står det ändrade filer? Committa dem först.
+- Står det `Your branch is ahead`? Kör `git push`.
+
+**VIKTIGT:** Har du ändrat `.github/workflows/release.yml` måste den ändringen vara pushad *innan* du skapar taggen. GitHub Actions använder workflow-filen som finns i taggen.
+
+#### 2. Ta reda på nuvarande version
 
 ```bash
-./scripts/bump-version.sh 0.6.0
+git describe --tags --abbrev=0
 ```
 
-Skriptet uppdaterar versionen i tre filer automatiskt:
+Visar senaste taggen, t.ex. `v0.7.1`. Välj nästa nummer:
+
+| Typ av ändring | Exempel |
+|---|---|
+| Buggfix, små ändringar | `0.7.1` → `0.7.2` |
+| Ny funktion | `0.7.1` → `0.8.0` |
+
+#### 3. Bumpa versionen
+
+```bash
+./scripts/bump-version.sh 0.7.2
+```
+
+Skriptet ändrar versionen i fyra filer:
 - `pyproject.toml`
 - `src-tauri/tauri.conf.json`
 - `app/package.json`
+- `app/package-lock.json`
 
-...och skapar en commit + git-tagg (`v0.6.0`).
+`package-lock.json` behöver alltså inte längre synkas för hand. Sedan skapar skriptet en commit (`Bumpa version till 0.7.2`) och taggen `v0.7.2`.
 
-#### 3. Pusha till GitHub i Gitbash
+**Så ser du att det fungerade:** skriptet skriver `Bumpar till version 0.7.2...`, sedan en lista över filerna och till sist `Klart! Kör nu: git push && git push --tags`.
+Får du **ingen utskrift alls** har skriptet inte körts. Kontrollera då att du inte råkade klistra in backticks.
+
+#### 4. Pusha till GitHub
 
 ```bash
 git push && git push --tags
 ```
 
-Detta triggar GitHub Actions-workflowet som bygger appen.
+Båda kommandona ska skriva ut något i stil med `main -> main` respektive `[new tag] v0.7.2 -> v0.7.2`.
+Står det `Everything up-to-date` på båda har bumpen inte gjorts, gå tillbaka till steg 3.
 
-#### 4. Vänta på bygget (~40 min)
+Den nya taggen startar bygget på GitHub Actions.
 
-Följ bygget på: https://github.com/Erinun/Transkriberaren/actions
+#### 5. Vänta på bygget (~40 min)
 
-#### 5. Verifiera releasen
+Följ bygget här: https://github.com/Erinun/Transkriberaren/actions
+
+#### 6. Verifiera releasen
 
 ```bash
-# Kolla att bygget lyckades
 gh run list -R Erinun/Transkriberaren --limit 1
-
-# Kolla att alla artefakter finns
-gh release view v0.6.0 -R Erinun/Transkriberaren --json assets --jq '.assets[].name'
+```
+```bash
+gh release view v0.7.2 -R Erinun/Transkriberaren --json assets --jq '.assets[].name'
 ```
 
-Du ska se minst dessa filer:
-- `MotesSkribent_0.6.0_x64-setup.exe` (installern)
-- `MotesSkribent_0.6.0_x64-setup.nsis.zip.sig` (signatur)
-- `latest.json` (update-manifest — **denna är kritisk för auto-uppdatering!**)
+Det första kommandot ska visa `completed success`. Det andra ska lista minst:
+- `MotesSkribent_0.7.2_x64-setup.exe` (installern)
+- `MotesSkribent_0.7.2_x64-setup.nsis.zip.sig` (signaturen)
+- `latest.json` (**krävs för att auto-uppdateringen ska fungera**)
 
-Om `latest.json` saknas fungerar INTE auto-uppdateringen.
+### Om något går fel
+
+**Fel versionsnummer, men du har inte pushat än:**
+```bash
+git tag -d v0.7.2
+```
+```bash
+git reset --hard HEAD~1
+```
+Det tar bort taggen och bump-commiten. Kör sedan steg 3 igen med rätt nummer.
+(`reset --hard` slänger även osparade ändringar, men om steg 1 var rent finns inga.)
+
+**Bygget misslyckades efter att du pushat:** rätta felet, committa och pusha rättelsen. Bumpa sedan till *nästa* version (t.ex. `0.7.3`). Återanvänd aldrig en tagg som redan finns på GitHub.
+
+**`Fel: Version måste vara i formatet X.Y.Z`:** skriv bara siffrorna, utan `v`. Skriv alltså `0.7.2`, inte `v0.7.2`.
+
+**`npm: command not found`:** skriptet använder npm för att uppdatera `app/package.json` och `app/package-lock.json`. Node.js måste vara installerat. Starta om Git Bash efter installationen.
 
 ### Checklista vid varje release
 
-- [ ] Alla kod- och workflow-ändringar är pushade till GitHub INNAN tagg
-- [ ] `bump-version.sh` kördes med rätt versionsnummer
-- [ ] `git push && git push --tags` kördes
+- [ ] `git status` visar ren arbetskopia och "up to date"
+- [ ] `bump-version.sh` kördes och skrev ut "Klart!"
+- [ ] `git push && git push --tags` visade den nya taggen (inte bara "Everything up-to-date")
 - [ ] GitHub Actions-bygget lyckades (grön bock)
-- [ ] `latest.json` finns bland release-artefakterna
-- [ ] Testa att en befintlig installation hittar uppdateringen
+- [ ] `latest.json` finns bland release-filerna
+- [ ] En befintlig installation hittar uppdateringen
 
 ---
 
