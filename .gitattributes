@@ -1,0 +1,10 @@
+# Normalisera textfiler till LF i repot
+* text=auto
+
+# Filer som skrivs om av verktyg (cargo, tauri, npm) med LF – checka ut med LF
+# så att de inte visas som ändrade efter varje bygge
+Cargo.toml text eol=lf
+Cargo.lock text eol=lf
+src-tauri/gen/schemas/*.json text eol=lf
+package.json text eol=lf
+package-lock.json text eol=lf
